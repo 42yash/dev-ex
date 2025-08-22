@@ -1,0 +1,152 @@
+version: '3.8'
+
+services:
+  # Frontend - Vue.js application
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    ports:
+      - "3000:3000"
+    environment:
+      - VITE_API_URL=http://localhost:8080
+      - NODE_ENV=development
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - api-gateway
+    networks:
+      - devex-network
+
+  # API Gateway - Node.js with Fastify
+  api-gateway:
+    build:
+      context: ./backend/gateway
+      dockerfile: Dockerfile.dev
+    ports:
+      - "8080:8080"
+    environment:
+      - NODE_ENV=development
+      - PORT=8080
+      - JWT_SECRET=${JWT_SECRET:-dev-secret-change-in-production}
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET:-dev-refresh-secret}
+      - REDIS_URL=redis://redis:6379
+      - AI_SERVICE_URL=ai-services:50051
+      - DATABASE_URL=postgresql://devex:devex@postgres:5432/devex
+    volumes:
+      - ./backend/gateway:/app
+      - /app/node_modules
+    depends_on:
+      - postgres
+      - redis
+      - ai-services
+    networks:
+      - devex-network
+
+  # AI Services - Python gRPC server
+  ai-services:
+    build:
+      context: ./backend/ai-services
+      dockerfile: Dockerfile.dev
+    ports:
+      - "50051:50051"
+    environment:
+      - PYTHON_ENV=development
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - DATABASE_URL=postgresql://devex:devex@postgres:5432/devex
+      - REDIS_URL=redis://redis:6379
+      - GRPC_PORT=50051
+    volumes:
+      - ./backend/ai-services:/app
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - devex-network
+
+  # PostgreSQL with pgvector extension
+  postgres:
+    image: ankane/pgvector:latest
+    environment:
+      - POSTGRES_DB=devex
+      - POSTGRES_USER=devex
+      - POSTGRES_PASSWORD=devex
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/01-init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U devex -d devex"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - devex-network
+
+  # Redis cache
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - devex-network
+
+  # n8n workflow automation
+  n8n:
+    image: n8nio/n8n:latest
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=${N8N_USER:-admin}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_PASSWORD:-admin}
+      - N8N_HOST=localhost
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - NODE_ENV=development
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY:-test-key}
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=postgres
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_DATABASE=n8n
+      - DB_POSTGRESDB_USER=devex
+      - DB_POSTGRESDB_PASSWORD=devex
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./workflows:/home/node/workflows
+    depends_on:
+      - postgres
+    networks:
+      - devex-network
+
+  # Adminer for database management (development only)
+  adminer:
+    image: adminer:latest
+    ports:
+      - "8081:8080"
+    environment:
+      - ADMINER_DEFAULT_SERVER=postgres
+    depends_on:
+      - postgres
+    networks:
+      - devex-network
+
+networks:
+  devex-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  n8n_data:

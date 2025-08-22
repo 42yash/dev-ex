@@ -1,0 +1,146 @@
+syntax = "proto3";
+
+package devex.api.v1;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/struct.proto";
+import "common.proto";
+
+// Chat service for managing conversations
+service ChatService {
+    // Send a message to the chat system
+    rpc SendMessage(SendMessageRequest) returns (SendMessageResponse);
+    
+    // Stream responses for real-time updates
+    rpc StreamResponse(StreamRequest) returns (stream StreamResponse);
+    
+    // Get chat history for a session
+    rpc GetHistory(GetHistoryRequest) returns (GetHistoryResponse);
+    
+    // Create a new chat session
+    rpc CreateSession(CreateSessionRequest) returns (CreateSessionResponse);
+    
+    // End a chat session
+    rpc EndSession(EndSessionRequest) returns (EndSessionResponse);
+}
+
+// Request to send a message
+message SendMessageRequest {
+    string session_id = 1;           // Required: Session identifier
+    string message = 2;               // Required: User message text
+    map<string, string> context = 3; // Optional: Additional context
+    MessageOptions options = 4;      // Optional: Message processing options
+}
+
+// Message processing options
+message MessageOptions {
+    bool stream = 1;                 // Enable streaming response
+    string preferred_connector = 2;  // Preferred documentation source
+    int32 max_tokens = 3;           // Maximum response tokens
+    float temperature = 4;           // LLM temperature (0.0-1.0)
+}
+
+// Response to a sent message
+message SendMessageResponse {
+    string response_id = 1;          // Unique response identifier
+    string content = 2;              // Response content
+    repeated Widget widgets = 3;     // Interactive widgets
+    repeated Action suggested_actions = 4; // Suggested next actions
+    ResponseMetadata metadata = 5;  // Response metadata
+}
+
+// Interactive widget
+message Widget {
+    string type = 1;                 // Widget type (mcq, code, diagram)
+    string widget_id = 2;            // Unique widget identifier
+    google.protobuf.Struct config = 3; // Widget configuration
+    google.protobuf.Struct data = 4;   // Widget data
+}
+
+// Suggested action
+message Action {
+    string action_id = 1;            // Action identifier
+    string label = 2;                // Display label
+    string description = 3;          // Action description
+    ActionType type = 4;             // Action type
+    map<string, string> params = 5; // Action parameters
+}
+
+// Action types
+enum ActionType {
+    ACTION_TYPE_UNSPECIFIED = 0;
+    ACTION_TYPE_NAVIGATE = 1;        // Navigate to different section
+    ACTION_TYPE_EXECUTE = 2;         // Execute command
+    ACTION_TYPE_EXPAND = 3;          // Expand for more details
+    ACTION_TYPE_EXTERNAL = 4;        // External link
+}
+
+// Response metadata
+message ResponseMetadata {
+    google.protobuf.Timestamp timestamp = 1;
+    int32 tokens_used = 2;
+    float processing_time = 3;
+    string model_used = 4;
+    map<string, string> extra = 5;
+}
+
+// Stream request
+message StreamRequest {
+    string session_id = 1;
+    bool include_widgets = 2;
+}
+
+// Stream response
+message StreamResponse {
+    string chunk_id = 1;
+    string content = 2;
+    bool is_final = 3;
+    repeated Widget widgets = 4;
+}
+
+// Get history request
+message GetHistoryRequest {
+    string session_id = 1;
+    int32 limit = 2;
+    int32 offset = 3;
+}
+
+// Get history response
+message GetHistoryResponse {
+    repeated ChatMessage messages = 1;
+    int32 total_count = 2;
+}
+
+// Chat message
+message ChatMessage {
+    string message_id = 1;
+    string session_id = 2;
+    string sender = 3;  // "user" or "ai"
+    string content = 4;
+    google.protobuf.Timestamp timestamp = 5;
+    repeated Widget widgets = 6;
+    map<string, string> metadata = 7;
+}
+
+// Create session request
+message CreateSessionRequest {
+    string user_id = 1;
+    map<string, string> metadata = 2;
+}
+
+// Create session response
+message CreateSessionResponse {
+    string session_id = 1;
+    google.protobuf.Timestamp created_at = 2;
+}
+
+// End session request
+message EndSessionRequest {
+    string session_id = 1;
+}
+
+// End session response
+message EndSessionResponse {
+    bool success = 1;
+    google.protobuf.Timestamp ended_at = 2;
+}

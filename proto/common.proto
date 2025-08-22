@@ -1,0 +1,72 @@
+syntax = "proto3";
+
+package devex.api.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// Common error message
+message Error {
+    int32 code = 1;                  // Error code
+    string message = 2;              // Error message
+    string details = 3;              // Detailed error information
+    google.protobuf.Timestamp timestamp = 4; // Error timestamp
+    map<string, string> metadata = 5; // Additional context
+}
+
+// Error codes
+enum ErrorCode {
+    ERROR_CODE_UNSPECIFIED = 0;
+    ERROR_CODE_INVALID_REQUEST = 1;
+    ERROR_CODE_NOT_FOUND = 2;
+    ERROR_CODE_PERMISSION_DENIED = 3;
+    ERROR_CODE_RATE_LIMITED = 4;
+    ERROR_CODE_INTERNAL = 5;
+    ERROR_CODE_UNAVAILABLE = 6;
+    ERROR_CODE_TIMEOUT = 7;
+}
+
+// Pagination request
+message PageRequest {
+    int32 page_size = 1;             // Items per page
+    string page_token = 2;           // Pagination token
+}
+
+// Pagination response
+message PageResponse {
+    string next_page_token = 1;      // Next page token
+    int32 total_items = 2;           // Total items available
+}
+
+// Health check request
+message HealthCheckRequest {
+    string service = 1;
+}
+
+// Health check response
+message HealthCheckResponse {
+    enum ServingStatus {
+        UNKNOWN = 0;
+        SERVING = 1;
+        NOT_SERVING = 2;
+        SERVICE_UNKNOWN = 3;
+    }
+    ServingStatus status = 1;
+}
+
+// User information
+message User {
+    string user_id = 1;
+    string email = 2;
+    string name = 3;
+    google.protobuf.Timestamp created_at = 4;
+    map<string, string> metadata = 5;
+}
+
+// Session information
+message Session {
+    string session_id = 1;
+    string user_id = 2;
+    google.protobuf.Timestamp created_at = 3;
+    google.protobuf.Timestamp last_activity = 4;
+    map<string, string> metadata = 5;
+}
