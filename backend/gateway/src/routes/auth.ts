@@ -1,5 +1,6 @@
 import { FastifyPluginAsync } from 'fastify'
 import bcrypt from 'bcryptjs'
+import { z } from 'zod'
 import { query, transaction } from '../db/index.js'
 import { setSession } from '../services/redis.js'
 import { logger } from '../utils/logger.js'
@@ -56,7 +57,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
         id: user.id,
         email: user.email,
         role: user.role
-      })
+      }, { expiresIn: '1h' })
       
       const refreshToken = fastify.jwt.sign(
         { id: user.id },
@@ -128,7 +129,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
         id: user.id,
         email: user.email,
         role: user.role
-      })
+      }, { expiresIn: '1h' })
       
       const refreshToken = fastify.jwt.sign(
         { id: user.id },
@@ -205,7 +206,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
         id: user.id,
         email: user.email,
         role: user.role
-      })
+      }, { expiresIn: '1h' })
       
       return reply.send({
         accessToken

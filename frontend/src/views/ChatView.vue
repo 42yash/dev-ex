@@ -13,11 +13,23 @@
           <div
             v-for="session in sessions"
             :key="session.id"
-            @click="selectSession(session.id)"
             :class="['session-item', { active: session.id === currentSessionId }]"
           >
-            <h4>{{ session.title }}</h4>
-            <p>{{ formatDate(session.lastActivity) }}</p>
+            <div @click="selectSession(session.id)" class="session-content">
+              <div class="session-info">
+                <h4>{{ session.title }}</h4>
+                <p>{{ formatDate(session.lastActivity) }}</p>
+              </div>
+              <button
+                @click.stop="deleteSession(session.id)"
+                class="delete-btn"
+                title="Delete session"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14zM10 11v6M14 11v6"/>
+                </svg>
+              </button>
+            </div>
           </div>
         </div>
       </aside>
@@ -159,6 +171,40 @@ async function selectSession(sessionId: string) {
   scrollToBottom()
 }
 
+async function deleteSession(sessionId: string) {
+  // Show confirmation dialog
+  const confirmDelete = confirm('Are you sure you want to delete this chat session? This action cannot be undone.')
+  
+  if (!confirmDelete) return
+  
+  try {
+    // Call API to delete session
+    await fetch(`/api/v1/chat/session/${sessionId}`, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Bearer ${authStore.token}`
+      }
+    })
+    
+    // Remove from sessions list
+    const index = sessions.value.findIndex(s => s.id === sessionId)
+    if (index > -1) {
+      sessions.value.splice(index, 1)
+    }
+    
+    // If we deleted the current session, create a new one
+    if (currentSessionId.value === sessionId) {
+      await createNewSession()
+    }
+    
+    // Show success message (optional)
+    console.log('Session deleted successfully')
+  } catch (error) {
+    console.error('Failed to delete session:', error)
+    alert('Failed to delete session. Please try again.')
+  }
+}
+
 async function sendMessage(text?: string) {
   const message = text || inputMessage.value.trim()
   if (!message) return
@@ -232,12 +278,107 @@ function parseMessage(content: string): MessagePart[] {
 }
 
 function formatInlineText(content: string): string {
-  // Format inline markdown elements
-  return content
+  // Split content into lines for processing
+  const lines = content.split('\n')
+  let result = ''
+  let listStack: Array<{type: 'ul' | 'ol', indent: number}> = []
+  
+  lines.forEach((line, index) => {
+    // Handle headings
+    if (line.startsWith('### ')) {
+      // Close all open lists
+      while (listStack.length > 0) {
+        result += `</${listStack.pop()!.type}>`
+      }
+      result += `<h3>${formatInlineMarkdown(line.slice(4))}</h3>`
+      return
+    } else if (line.startsWith('## ')) {
+      // Close all open lists
+      while (listStack.length > 0) {
+        result += `</${listStack.pop()!.type}>`
+      }
+      result += `<h2>${formatInlineMarkdown(line.slice(3))}</h2>`
+      return
+    } else if (line.startsWith('# ')) {
+      // Close all open lists
+      while (listStack.length > 0) {
+        result += `</${listStack.pop()!.type}>`
+      }
+      result += `<h1>${formatInlineMarkdown(line.slice(2))}</h1>`
+      return
+    }
+    
+    // Check if line is a list item
+    const unorderedMatch = line.match(/^(\s*)[-*]\s+(.*)$/)
+    const orderedMatch = line.match(/^(\s*)(\d+)\.\s+(.*)$/)
+    
+    if (unorderedMatch || orderedMatch) {
+      const isOrdered = !!orderedMatch
+      const match = unorderedMatch || orderedMatch!
+      const indent = match[1].length
+      const content = isOrdered ? match[3] : match[2]
+      const newType = isOrdered ? 'ol' : 'ul'
+      
+      // Determine indent level (assuming 2 or 4 spaces per level)
+      const indentLevel = Math.floor(indent / 2)
+      
+      // Close lists that are deeper than current indent
+      while (listStack.length > 0 && listStack[listStack.length - 1].indent > indentLevel) {
+        result += `</${listStack.pop()!.type}>`
+      }
+      
+      // If we have a list at the same level but different type, close it
+      if (listStack.length > 0 && 
+          listStack[listStack.length - 1].indent === indentLevel && 
+          listStack[listStack.length - 1].type !== newType) {
+        result += `</${listStack.pop()!.type}>`
+      }
+      
+      // Open new list if needed
+      if (listStack.length === 0 || listStack[listStack.length - 1].indent < indentLevel) {
+        result += `<${newType}>`
+        listStack.push({type: newType, indent: indentLevel})
+      } else if (listStack.length === 0 || listStack[listStack.length - 1].indent !== indentLevel) {
+        result += `<${newType}>`
+        listStack.push({type: newType, indent: indentLevel})
+      }
+      
+      result += `<li>${formatInlineMarkdown(content)}</li>`
+    } else {
+      // Not a list item - close all open lists
+      while (listStack.length > 0) {
+        result += `</${listStack.pop()!.type}>`
+      }
+      
+      // Handle regular text
+      const formattedLine = formatInlineMarkdown(line)
+      if (formattedLine.trim()) {
+        result += formattedLine
+        // Add line break if not the last line and next line isn't empty
+        if (index < lines.length - 1 && lines[index + 1].trim()) {
+          result += '<br>'
+        }
+      } else if (index < lines.length - 1) {
+        // Empty line - add spacing
+        result += '<br>'
+      }
+    }
+  })
+  
+  // Close any remaining open lists
+  while (listStack.length > 0) {
+    result += `</${listStack.pop()!.type}>`
+  }
+  
+  return result
+}
+
+function formatInlineMarkdown(text: string): string {
+  return text
     .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
     .replace(/\*(.*?)\*/g, '<em>$1</em>')
     .replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>')
-    .replace(/\n/g, '<br>')
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>')
 }
 
 function formatDate(date: string): string {
@@ -367,19 +508,39 @@ async function handleRegenerateResponse(messageId: string) {
 }
 
 .session-item {
-  padding: 0.75rem;
   margin-bottom: 0.25rem;
   border-radius: var(--radius-md);
-  cursor: pointer;
   transition: background var(--transition-fast);
+  position: relative;
 
   &:hover {
     background: rgba(255, 255, 255, 0.05);
+    
+    .delete-btn {
+      opacity: 1;
+    }
   }
 
   &.active {
     background: rgba(0, 255, 136, 0.1);
     border-left: 3px solid var(--accent);
+    
+    .delete-btn {
+      opacity: 0.5;
+    }
+  }
+
+  .session-content {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem;
+    cursor: pointer;
+  }
+
+  .session-info {
+    flex: 1;
+    min-width: 0;
   }
 
   h4 {
@@ -393,6 +554,32 @@ async function handleRegenerateResponse(messageId: string) {
   p {
     font-size: 0.75rem;
     color: var(--text-secondary);
+  }
+
+  .delete-btn {
+    opacity: 0;
+    background: transparent;
+    border: none;
+    color: rgba(255, 255, 255, 0.6);
+    cursor: pointer;
+    padding: 0.25rem;
+    border-radius: var(--radius-sm);
+    transition: all var(--transition-fast);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-left: 0.5rem;
+
+    &:hover {
+      background: rgba(255, 0, 0, 0.2);
+      color: #ff4444;
+    }
+
+    svg {
+      width: 16px;
+      height: 16px;
+    }
   }
 }
 
@@ -532,6 +719,62 @@ async function handleRegenerateResponse(messageId: string) {
   
   :deep(em) {
     font-style: italic;
+  }
+  
+  :deep(h1) {
+    font-size: 1.75rem;
+    font-weight: 700;
+    margin: 1rem 0 0.5rem;
+    color: var(--text-primary);
+  }
+  
+  :deep(h2) {
+    font-size: 1.5rem;
+    font-weight: 600;
+    margin: 0.875rem 0 0.5rem;
+    color: var(--text-primary);
+  }
+  
+  :deep(h3) {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin: 0.75rem 0 0.5rem;
+    color: var(--text-primary);
+  }
+  
+  :deep(ul), :deep(ol) {
+    margin: 0.5rem 0;
+    padding-left: 1.25rem;
+    list-style-position: outside;
+  }
+  
+  :deep(ul) {
+    list-style-type: disc;
+  }
+  
+  :deep(ol) {
+    list-style-type: decimal;
+  }
+  
+  :deep(li) {
+    margin: 0.375rem 0;
+    line-height: 1.6;
+    padding-left: 0.25rem;
+  }
+  
+  :deep(li > ul), :deep(li > ol) {
+    margin: 0.25rem 0;
+  }
+  
+  :deep(a) {
+    color: var(--accent);
+    text-decoration: none;
+    border-bottom: 1px solid transparent;
+    transition: border-color 0.2s;
+    
+    &:hover {
+      border-bottom-color: var(--accent);
+    }
   }
 }
 

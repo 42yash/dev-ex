@@ -45,9 +45,13 @@ export async function initializeGrpcClients(): Promise<void> {
       }
     )
     
-    logger.info('gRPC clients initialized')
+    logger.info('gRPC clients initialized successfully')
   } catch (error) {
-    logger.error('Failed to initialize gRPC clients:', error)
+    logger.error('Failed to initialize gRPC clients:', {
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+      aiServiceUrl: config.grpc.aiServiceUrl
+    })
     // Don't throw error in development to allow API to start without AI service
     if (config.app.env === 'production') {
       throw error

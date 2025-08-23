@@ -16,7 +16,7 @@ from dotenv import load_dotenv
 import structlog
 
 from src.config import Config
-from src.services.grpc_server_simple import GrpcServer, create_grpc_server, compile_protos
+from src.services.grpc_server import GrpcServer, compile_protos
 from src.db.connection import DatabaseManager
 from src.cache.redis_client import RedisCache
 from src.agents.manager import AgentManager
@@ -101,7 +101,7 @@ class AIServer:
     async def start_grpc_server(self):
         """Start the gRPC server"""
         # Create gRPC server
-        self.grpc_server = create_grpc_server(self.agent_manager)
+        self.grpc_server = GrpcServer(self.agent_manager, port=self.config.grpc.port)
         
         # Start server
         await self.grpc_server.start()

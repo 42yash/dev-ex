@@ -245,8 +245,7 @@ class AgentManager:
                         "success": result.success,
                         "output": result.output,
                         "metadata": result.metadata
-                    },
-                    ttl=3600  # 1 hour cache
+                    }
                 )
             
             return result
@@ -290,7 +289,7 @@ class AgentManager:
                 query,
                 agent_name,
                 context.session_id,
-                json.dumps(input_data) if not isinstance(input_data, str) else input_data,
+                json.dumps(input_data),  # Always JSON encode
                 json.dumps(result.output) if result.output else None,
                 status,
                 datetime.utcnow(),
@@ -355,8 +354,22 @@ class AgentManager:
         result = await self.execute_agent(agent.name, message, context)
         
         if result.success:
+            # Extract the response text from the structured output
+            content = result.output
+            if isinstance(content, dict) and "response" in content:
+                content = content["response"]
+            elif isinstance(content, str):
+                # Try to parse as JSON and extract response
+                try:
+                    import json
+                    parsed = json.loads(content)
+                    if isinstance(parsed, dict) and "response" in parsed:
+                        content = parsed["response"]
+                except:
+                    pass  # Keep original content if not JSON
+            
             return {
-                "content": result.output,
+                "content": content,
                 "widgets": [],  # TODO: Implement widget generation
                 "suggested_actions": [],
                 "metadata": result.metadata

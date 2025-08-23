@@ -32,7 +32,7 @@ class RedisConfig:
 class GeminiConfig:
     """Google Gemini AI configuration"""
     api_key: str
-    model: str = "gemini-pro"
+    model: str = "gemini-2.5-flash"
     temperature: float = 0.7
     max_tokens: int = 4096
     timeout: int = 30
@@ -74,7 +74,7 @@ class Config:
         
         self.gemini = GeminiConfig(
             api_key=os.getenv("GEMINI_API_KEY", ""),
-            model=os.getenv("AI_MODEL", "gemini-pro"),
+            model=os.getenv("AI_MODEL", "gemini-2.5-flash"),
             temperature=float(os.getenv("AI_TEMPERATURE", "0.7")),
             max_tokens=int(os.getenv("AI_MAX_TOKENS", "4096")),
             timeout=int(os.getenv("AI_TIMEOUT_SECONDS", "30"))

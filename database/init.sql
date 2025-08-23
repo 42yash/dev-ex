@@ -236,7 +236,7 @@ ON CONFLICT (email) DO NOTHING;
 INSERT INTO agents (name, type, version, system_prompt, config) VALUES
 ('architect', 'meta', '1.0.0', 'You are Agent 0, The Architect Agent. Your sole purpose is to create the system prompts for other specialized AI agents.', '{"model": "gemini-pro", "temperature": 0.7}'),
 ('idea_generator', 'creative', '1.0.0', 'You are an Idea Generation Agent. Transform vague concepts into structured project ideas.', '{"model": "gemini-pro", "temperature": 0.9}'),
-('technical_writer', 'documentation', '1.0.0', 'You are a Technical Documentation Agent. Convert ideas into comprehensive technical specifications.', '{"model": "gemini-pro", "temperature": 0.5}'),
+('technical_writer', 'documentation', '1.0.0', 'You are a Technical Documentation Agent. Convert ideas into comprehensive technical specifications.', '{"model": "gemini-2.5-flash", "temperature": 0.5}'),
 ('scaffolder', 'code', '1.0.0', 'You are a Code Scaffolding Agent. Generate complete project scaffolds and boilerplate code.', '{"model": "gemini-pro", "temperature": 0.3}')
 ON CONFLICT (name) DO NOTHING;
 

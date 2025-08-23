@@ -51,9 +51,14 @@ class ChatServicer(chat_pb2_grpc.ChatServiceServicer):
             logger.info(f"Received message for session: {request.session_id}")
             
             # Process message through agent manager
+            # Get user_id from metadata if available
+            metadata_dict = {}
+            for key, value in context.invocation_metadata():
+                metadata_dict[key] = value
+            
             result = await self.agent_manager.process_chat_message(
                 session_id=request.session_id,
-                user_id=context.metadata().get('user_id', 'anonymous'),
+                user_id=metadata_dict.get('user_id', 'anonymous'),
                 message=request.message,
                 options={
                     'context': dict(request.context),

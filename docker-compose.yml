@@ -49,6 +49,7 @@ services:
     volumes:
       - ./backend/gateway:/app
       - /app/node_modules
+      - ./proto:/proto
     depends_on:
       postgres:
         condition: service_healthy
