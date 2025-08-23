@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # Frontend - Vue.js application
   frontend:
@@ -38,9 +36,13 @@ services:
       - ./backend/gateway:/app
       - /app/node_modules
     depends_on:
-      - postgres
-      - redis
-      - ai-services
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      ai-services:
+        condition: service_started
+    restart: unless-stopped
     networks:
       - devex-network
 
