@@ -12,6 +12,8 @@ import google.generativeai as genai
 
 from .base import BaseAgent, AgentContext, AgentResult, AgentType, ConversationalAgent
 from .architect import ArchitectAgent
+from .idea_generator import IdeaGeneratorAgent
+from .technical_writer import TechnicalWriterAgent
 from ..config import Config
 from ..db.connection import DatabaseManager
 from ..cache.redis_client import RedisCache
@@ -67,6 +69,14 @@ class AgentManager:
         architect = ArchitectAgent(model=self.model)
         self.register_agent(architect)
         
+        # Agent 1: The Idea Generator
+        idea_generator = IdeaGeneratorAgent(model=self.model)
+        self.register_agent(idea_generator)
+        
+        # Agent 2: The Technical Writer
+        technical_writer = TechnicalWriterAgent(model=self.model)
+        self.register_agent(technical_writer)
+        
         # Basic Chat Agent
         chat_agent = ConversationalAgent(
             name="chat",
@@ -77,8 +87,6 @@ class AgentManager:
             model=self.model
         )
         self.register_agent(chat_agent)
-        
-        # Add more core agents as needed
     
     async def _load_custom_agents(self):
         """Load custom agents from the database"""

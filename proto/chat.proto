@@ -12,7 +12,7 @@ service ChatService {
     rpc SendMessage(SendMessageRequest) returns (SendMessageResponse);
     
     // Stream responses for real-time updates
-    rpc StreamResponse(StreamRequest) returns (stream StreamResponse);
+    rpc StreamResponses(StreamRequest) returns (stream StreamResponse);
     
     // Get chat history for a session
     rpc GetHistory(GetHistoryRequest) returns (GetHistoryResponse);

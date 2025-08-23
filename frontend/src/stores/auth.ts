@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { authApi } from '@/services/api'
 import router from '@/router'
+import { wsService } from '@/services/websocket'
 
 export interface User {
   id: string
@@ -44,6 +45,9 @@ export const useAuthStore = defineStore('auth', () => {
       localStorage.setItem('accessToken', response.accessToken)
       localStorage.setItem('refreshToken', response.refreshToken)
       
+      // Connect WebSocket with new token
+      wsService.connect()
+      
       // Redirect to chat
       router.push('/chat')
       
@@ -70,6 +74,9 @@ export const useAuthStore = defineStore('auth', () => {
       // Store tokens
       localStorage.setItem('accessToken', response.accessToken)
       localStorage.setItem('refreshToken', response.refreshToken)
+      
+      // Connect WebSocket with new token
+      wsService.connect()
       
       // Redirect to chat
       router.push('/chat')
@@ -100,6 +107,9 @@ export const useAuthStore = defineStore('auth', () => {
       // Clear localStorage
       localStorage.removeItem('accessToken')
       localStorage.removeItem('refreshToken')
+      
+      // Disconnect WebSocket
+      wsService.disconnect()
       
       // Redirect to home
       router.push('/')

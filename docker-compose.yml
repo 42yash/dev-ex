@@ -54,6 +54,7 @@ services:
     ports:
       - "50051:50051"
     environment:
+      - PYTHONUNBUFFERED=1
       - PYTHON_ENV=development
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - DATABASE_URL=postgresql://devex:devex@postgres:5432/devex
@@ -61,6 +62,7 @@ services:
       - GRPC_PORT=50051
     volumes:
       - ./backend/ai-services:/app
+      - ./proto:/proto
     depends_on:
       - postgres
       - redis

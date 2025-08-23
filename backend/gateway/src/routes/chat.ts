@@ -4,6 +4,7 @@ import { query } from '../db/index.js'
 import { getCached, setCached } from '../services/redis.js'
 import * as grpcService from '../services/grpc.js'
 import { logger } from '../utils/logger.js'
+import { broadcastMessage } from '../services/websocket.js'
 
 // Validation schemas
 const sendMessageSchema = z.object({
@@ -102,11 +103,29 @@ export const chatRoutes: FastifyPluginAsync = async (fastify) => {
       }
       
       // Store user message in database
-      await query(
+      const userMessageResult = await query(
         `INSERT INTO messages (session_id, sender, content) 
-         VALUES ($1, $2, $3)`,
+         VALUES ($1, $2, $3)
+         RETURNING id, session_id, sender, content, created_at`,
         [sessionId, 'user', body.message]
       )
+      
+      const userMessage = userMessageResult[0]
+      
+      // Broadcast user message via WebSocket
+      const io = (fastify as any).io
+      if (io && sessionId) {
+        logger.info(`Broadcasting message to session ${sessionId}`)
+        broadcastMessage(io, sessionId, {
+          id: userMessage.id,
+          sessionId: userMessage.session_id,
+          sender: userMessage.sender,
+          content: userMessage.content,
+          timestamp: userMessage.created_at
+        })
+      } else {
+        logger.warn(`WebSocket not available for broadcasting (io: ${!!io}, sessionId: ${sessionId})`)
+      }
       
       // Update session last activity
       await query(
@@ -118,15 +137,16 @@ export const chatRoutes: FastifyPluginAsync = async (fastify) => {
       let aiResponse = null
       try {
         aiResponse = await grpcService.sendMessage(
-          sessionId,
+          sessionId!,
           body.message,
           body.options
         )
         
         // Store AI response in database
-        await query(
+        const aiMessageResult = await query(
           `INSERT INTO messages (session_id, sender, content, tokens_used, processing_time) 
-           VALUES ($1, $2, $3, $4, $5)`,
+           VALUES ($1, $2, $3, $4, $5)
+           RETURNING id, session_id, sender, content, created_at`,
           [
             sessionId,
             'ai',
@@ -135,6 +155,21 @@ export const chatRoutes: FastifyPluginAsync = async (fastify) => {
             aiResponse.metadata?.processing_time || null
           ]
         )
+        
+        const aiMessage = aiMessageResult[0]
+        
+        // Broadcast AI response via WebSocket
+        if (io && sessionId) {
+          broadcastMessage(io, sessionId, {
+            id: aiMessage.id,
+            sessionId: aiMessage.session_id,
+            sender: aiMessage.sender,
+            content: aiMessage.content,
+            timestamp: aiMessage.created_at,
+            widgets: aiResponse.widgets,
+            metadata: aiResponse.metadata
+          })
+        }
       } catch (error) {
         logger.error('Failed to get AI response:', error)
         
@@ -148,11 +183,25 @@ export const chatRoutes: FastifyPluginAsync = async (fastify) => {
         }
         
         // Store fallback response
-        await query(
+        const fallbackResult = await query(
           `INSERT INTO messages (session_id, sender, content) 
-           VALUES ($1, $2, $3)`,
+           VALUES ($1, $2, $3)
+           RETURNING id, session_id, sender, content, created_at`,
           [sessionId, 'ai', aiResponse.content]
         )
+        
+        const fallbackMessage = fallbackResult[0]
+        
+        // Broadcast fallback response via WebSocket
+        if (io && sessionId) {
+          broadcastMessage(io, sessionId, {
+            id: fallbackMessage.id,
+            sessionId: fallbackMessage.session_id,
+            sender: fallbackMessage.sender,
+            content: fallbackMessage.content,
+            timestamp: fallbackMessage.created_at
+          })
+        }
       }
       
       return reply.send({

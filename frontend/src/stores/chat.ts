@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { chatApi } from '@/services/api'
+import { wsService, type ChatMessageEvent, type StreamingMessageEvent, type SessionUpdateEvent } from '@/services/websocket'
 
 export interface Message {
   id: string
@@ -28,6 +29,8 @@ export const useChatStore = defineStore('chat', () => {
   const messages = ref<Map<string, Message[]>>(new Map())
   const isLoading = ref(false)
   const error = ref<string | null>(null)
+  const streamingMessages = ref<Map<string, string>>(new Map())
+  const wsConnected = computed(() => wsService.connected.value)
 
   // Getters
   const currentSession = computed(() => 
@@ -37,6 +40,48 @@ export const useChatStore = defineStore('chat', () => {
   const currentMessages = computed(() => 
     currentSessionId.value ? messages.value.get(currentSessionId.value) || [] : []
   )
+
+  // WebSocket event handlers
+  function setupWebSocketListeners() {
+    // Handle incoming messages
+    wsService.on('chat_message', (data: ChatMessageEvent) => {
+      const sessionMessages = messages.value.get(data.sessionId) || []
+      const existingIndex = sessionMessages.findIndex(m => m.id === data.message.id)
+      
+      if (existingIndex === -1) {
+        sessionMessages.push(data.message)
+        messages.value.set(data.sessionId, sessionMessages)
+      }
+    })
+
+    // Handle streaming messages
+    wsService.on('message_stream', (data: StreamingMessageEvent) => {
+      if (data.isComplete) {
+        streamingMessages.value.delete(data.messageId)
+      } else {
+        const current = streamingMessages.value.get(data.messageId) || ''
+        streamingMessages.value.set(data.messageId, current + data.chunk)
+      }
+    })
+
+    // Handle session updates
+    wsService.on('session_update', (data: SessionUpdateEvent) => {
+      const session = sessions.value.find(s => s.id === data.sessionId)
+      if (session) {
+        Object.assign(session, data.update)
+      }
+    })
+  }
+
+  // Watch for session changes to join/leave rooms
+  watch(currentSessionId, (newId, oldId) => {
+    if (oldId) {
+      wsService.leaveSession(oldId)
+    }
+    if (newId) {
+      wsService.joinSession(newId)
+    }
+  })
 
   // Actions
   async function loadSessions() {
@@ -194,6 +239,14 @@ export const useChatStore = defineStore('chat', () => {
     error.value = null
   }
 
+  // Initialize WebSocket listeners
+  setupWebSocketListeners()
+  
+  // Connect WebSocket when authenticated
+  if (localStorage.getItem('accessToken')) {
+    wsService.connect()
+  }
+
   return {
     // State
     sessions,
@@ -201,6 +254,8 @@ export const useChatStore = defineStore('chat', () => {
     messages,
     isLoading,
     error,
+    streamingMessages,
+    wsConnected,
     
     // Getters
     currentSession,

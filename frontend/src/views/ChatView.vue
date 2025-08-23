@@ -26,9 +26,6 @@
       <main class="chat-main">
         <div class="chat-header">
           <h2>{{ currentSession?.title || 'New Chat' }}</h2>
-          <div class="chat-actions">
-            <button @click="toggleSettings" class="btn-icon">⚙️</button>
-          </div>
         </div>
 
         <div class="messages-container" ref="messagesContainer">
@@ -51,12 +48,26 @@
             v-for="message in messages"
             :key="message.id"
             :class="['message', `message-${message.sender}`]"
+            @mouseenter="hoveredMessageId = message.id"
+            @mouseleave="hoveredMessageId = null"
           >
             <div class="message-avatar">
               {{ message.sender === 'user' ? '👤' : '🤖' }}
             </div>
             <div class="message-content">
-              <div class="message-text" v-html="formatMessage(message.content)"></div>
+              <MessageActions
+                :message="message"
+                :show-actions="hoveredMessageId === message.id"
+                @edit-message="handleEditMessage"
+                @delete-message="handleDeleteMessage"
+                @regenerate-response="handleRegenerateResponse"
+              />
+              <div class="message-text">
+                <template v-for="(part, index) in parseMessage(message.content)" :key="index">
+                  <CodeBlock v-if="part.type === 'code'" :code="part.content" :language="part.language" />
+                  <span v-else v-html="formatInlineText(part.content)"></span>
+                </template>
+              </div>
               <div class="message-time">{{ formatTime(message.timestamp) }}</div>
             </div>
           </div>
@@ -91,6 +102,14 @@
         </div>
       </main>
     </div>
+
+    <!-- Floating Settings Button -->
+    <button @click="toggleSettings" class="floating-settings-btn" title="Settings">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="3"></circle>
+        <path d="M12 1v6m0 6v6m4.22-13.22l-4.24 4.24m0 5.96l4.24 4.24M20 12h-6m-6 0H2m13.22 4.22l-4.24-4.24m0-5.96l-4.24-4.24"></path>
+      </svg>
+    </button>
   </div>
 </template>
 
@@ -99,6 +118,8 @@ import { ref, computed, onMounted, nextTick } from 'vue'
 import { useChatStore } from '@/stores/chat'
 import { useAuthStore } from '@/stores/auth'
 import { useRouter } from 'vue-router'
+import MessageActions from '@/components/MessageActions.vue'
+import CodeBlock from '@/components/CodeBlock.vue'
 
 const router = useRouter()
 const chatStore = useChatStore()
@@ -107,6 +128,7 @@ const authStore = useAuthStore()
 const messagesContainer = ref<HTMLElement>()
 const inputMessage = ref('')
 const isLoading = ref(false)
+const hoveredMessageId = ref<string | null>(null)
 
 const sessions = computed(() => chatStore.sessions)
 const currentSessionId = computed(() => chatStore.currentSessionId)
@@ -167,12 +189,54 @@ function scrollToBottom() {
   }
 }
 
-function formatMessage(content: string): string {
-  // Basic markdown-like formatting
+interface MessagePart {
+  type: 'text' | 'code'
+  content: string
+  language?: string
+}
+
+function parseMessage(content: string): MessagePart[] {
+  const parts: MessagePart[] = []
+  const codeBlockRegex = /```(\w+)?\n([\s\S]*?)```/g
+  let lastIndex = 0
+  let match
+
+  while ((match = codeBlockRegex.exec(content)) !== null) {
+    // Add text before code block
+    if (match.index > lastIndex) {
+      parts.push({
+        type: 'text',
+        content: content.slice(lastIndex, match.index)
+      })
+    }
+
+    // Add code block
+    parts.push({
+      type: 'code',
+      content: match[2].trim(),
+      language: match[1] || undefined
+    })
+
+    lastIndex = match.index + match[0].length
+  }
+
+  // Add remaining text
+  if (lastIndex < content.length) {
+    parts.push({
+      type: 'text',
+      content: content.slice(lastIndex)
+    })
+  }
+
+  return parts.length > 0 ? parts : [{ type: 'text', content }]
+}
+
+function formatInlineText(content: string): string {
+  // Format inline markdown elements
   return content
     .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
     .replace(/\*(.*?)\*/g, '<em>$1</em>')
-    .replace(/`(.*?)`/g, '<code>$1</code>')
+    .replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>')
     .replace(/\n/g, '<br>')
 }
 
@@ -188,7 +252,60 @@ function formatTime(timestamp: string): string {
 }
 
 function toggleSettings() {
-  router.push('/settings')
+  router.push('/dashboard')
+}
+
+// Message action handlers
+async function handleEditMessage(messageId: string, newContent: string) {
+  // Find the message and update it
+  const messages = chatStore.messages.get(currentSessionId.value || '')
+  if (messages) {
+    const message = messages.find(m => m.id === messageId)
+    if (message) {
+      message.content = newContent
+      // In a real app, you'd also send this to the backend
+      // await chatApi.updateMessage(messageId, newContent)
+    }
+  }
+}
+
+async function handleDeleteMessage(messageId: string) {
+  // Remove the message from the store
+  const messages = chatStore.messages.get(currentSessionId.value || '')
+  if (messages) {
+    const index = messages.findIndex(m => m.id === messageId)
+    if (index > -1) {
+      messages.splice(index, 1)
+      // In a real app, you'd also send this to the backend
+      // await chatApi.deleteMessage(messageId)
+    }
+  }
+}
+
+async function handleRegenerateResponse(messageId: string) {
+  // Find the previous user message and resend it
+  const messages = chatStore.messages.get(currentSessionId.value || '')
+  if (messages) {
+    const messageIndex = messages.findIndex(m => m.id === messageId)
+    if (messageIndex > 0) {
+      const previousMessage = messages[messageIndex - 1]
+      if (previousMessage.sender === 'user') {
+        // Remove the AI response
+        messages.splice(messageIndex, 1)
+        // Resend the user message
+        isLoading.value = true
+        try {
+          await chatStore.sendMessage(previousMessage.content)
+          await nextTick()
+          scrollToBottom()
+        } catch (error) {
+          console.error('Failed to regenerate response:', error)
+        } finally {
+          isLoading.value = false
+        }
+      }
+    }
+  }
 }
 </script>
 
@@ -392,16 +509,29 @@ function toggleSettings() {
   max-width: 70%;
   padding: 0.75rem 1rem;
   border-radius: var(--radius-lg);
+  position: relative;
 }
 
 .message-text {
   line-height: 1.5;
 
-  :deep(code) {
-    background: rgba(0, 0, 0, 0.2);
-    padding: 0.125rem 0.25rem;
+  :deep(.inline-code) {
+    background: rgba(0, 255, 136, 0.1);
+    color: var(--accent);
+    padding: 0.125rem 0.375rem;
     border-radius: var(--radius-sm);
     font-family: 'Fira Code', monospace;
+    font-size: 0.875em;
+    border: 1px solid rgba(0, 255, 136, 0.2);
+  }
+  
+  :deep(strong) {
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+  
+  :deep(em) {
+    font-style: italic;
   }
 }
 
@@ -492,5 +622,39 @@ function toggleSettings() {
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+.floating-settings-btn {
+  position: fixed;
+  bottom: 2rem;
+  left: 2rem;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--bg-primary);
+  border: none;
+  box-shadow: 0 4px 12px rgba(0, 255, 136, 0.3);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-fast);
+  z-index: 1000;
+}
+
+.floating-settings-btn:hover {
+  transform: scale(1.1) rotate(45deg);
+  background: var(--accent-secondary);
+  box-shadow: 0 6px 20px rgba(0, 255, 136, 0.5);
+}
+
+.floating-settings-btn svg {
+  width: 24px;
+  height: 24px;
+}
+
+.floating-settings-btn:active {
+  transform: scale(0.95);
 }
 </style>

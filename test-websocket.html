@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebSocket Test</title>
+    <script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
+</head>
+<body>
+    <h1>WebSocket Connection Test</h1>
+    <div id="status">Connecting...</div>
+    <button onclick="testConnection()">Test Connection</button>
+    <div id="log"></div>
+
+    <script>
+        const token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6Ijg1MjU5MThlLTMyYTQtNDNkYy1hODM4LTQ4MGJiNmQ1ZDBjYyIsImVtYWlsIjoiZGVtb0BleGFtcGxlLmNvbSIsInJvbGUiOiJ1c2VyIiwiaWF0IjoxNzU1OTQzOTk1LCJleHAiOjE3NTU5NDc1OTV9.rxy9g_NkXTlgJTkHQ-1fEZpQDfNfJ7uX7R6_fw9K5UM";
+        
+        const socket = io('http://localhost:8080', {
+            transports: ['websocket', 'polling'],
+            auth: {
+                token: token
+            }
+        });
+
+        function addLog(message) {
+            const log = document.getElementById('log');
+            log.innerHTML += `<p>${new Date().toISOString()}: ${message}</p>`;
+        }
+
+        socket.on('connect', () => {
+            document.getElementById('status').textContent = 'Connected!';
+            addLog('Connected to WebSocket server');
+        });
+
+        socket.on('connect_error', (error) => {
+            document.getElementById('status').textContent = 'Connection failed!';
+            addLog(`Connection error: ${error.message}`);
+        });
+
+        socket.on('error', (error) => {
+            addLog(`Error: ${error.message}`);
+        });
+
+        function testConnection() {
+            if (socket.connected) {
+                addLog('Socket is connected, emitting test event...');
+                socket.emit('test', { message: 'Hello from client' });
+            } else {
+                addLog('Socket is not connected');
+            }
+        }
+    </script>
+</body>
+</html>

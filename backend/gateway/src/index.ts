@@ -12,10 +12,14 @@ import { errorHandler } from './middleware/errorHandler.js'
 import { initializeDatabase } from './db/index.js'
 import { initializeRedis } from './services/redis.js'
 import { initializeGrpcClients } from './services/grpc.js'
+import { setupWebSocket } from './services/websocket.js'
 
 const server = Fastify({
-  logger: logger
+  logger: true
 })
+
+// Socket.io instance (will be initialized after server starts)
+let io: any = null
 
 async function start() {
   try {
@@ -60,15 +64,7 @@ async function start() {
       timeWindow: config.rateLimit.windowMs
     })
 
-    // Set error handler
-    server.setErrorHandler(errorHandler)
-
-    // Register routes
-    await server.register(healthRoutes, { prefix: '/health' })
-    await server.register(authRoutes, { prefix: '/api/v1/auth' })
-    await server.register(chatRoutes, { prefix: '/api/v1/chat' })
-
-    // JWT decorator
+    // JWT decorator - must be before routes
     server.decorate('authenticate', async function(request: any, reply: any) {
       try {
         await request.jwtVerify()
@@ -77,13 +73,28 @@ async function start() {
       }
     })
 
+    // Set error handler
+    server.setErrorHandler(errorHandler as any)
+
+    // Register routes
+    await server.register(healthRoutes, { prefix: '/health' })
+    await server.register(authRoutes, { prefix: '/api/v1/auth' })
+    await server.register(chatRoutes, { prefix: '/api/v1/chat' })
+
     // Start server
     await server.listen({ 
       port: config.app.port, 
       host: '0.0.0.0' 
     })
 
-    logger.info(`Server listening on http://0.0.0.0:${config.app.port}`)
+    // Setup WebSocket server AFTER Fastify is listening
+    io = setupWebSocket(server.server as any, server)
+    ;(server as any).log.info('WebSocket server initialized')
+    
+    // Make io available globally for routes to use
+    ;(server as any).io = io
+
+    ;(server as any).log.info(`Server listening on http://0.0.0.0:${config.app.port}`)
   } catch (err) {
     logger.error(err)
     process.exit(1)

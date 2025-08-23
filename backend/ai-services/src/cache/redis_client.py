@@ -3,7 +3,7 @@ Redis cache client for AI Services
 """
 
 import json
-import aioredis
+import redis.asyncio as redis
 from typing import Optional, Any
 import structlog
 
@@ -15,12 +15,12 @@ class RedisCache:
     
     def __init__(self, redis_url: str):
         self.redis_url = redis_url
-        self.redis: Optional[aioredis.Redis] = None
+        self.redis: Optional[redis.Redis] = None
         
     async def connect(self):
         """Connect to Redis"""
         try:
-            self.redis = await aioredis.from_url(
+            self.redis = redis.from_url(
                 self.redis_url,
                 encoding="utf-8",
                 decode_responses=True

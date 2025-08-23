@@ -18,6 +18,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
+# Compile proto files at runtime (will be handled by the app)
+
 # Create non-root user
 RUN useradd -m -u 1000 python && \
     chown -R python:python /app

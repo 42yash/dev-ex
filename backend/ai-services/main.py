@@ -16,13 +16,26 @@ from dotenv import load_dotenv
 import structlog
 
 from src.config import Config
-from src.services.grpc_server import AIServicer
+from src.services.grpc_server_simple import GrpcServer, create_grpc_server, compile_protos
 from src.db.connection import DatabaseManager
 from src.cache.redis_client import RedisCache
 from src.agents.manager import AgentManager
 
 # Load environment variables
 load_dotenv()
+
+# Configure standard logging first
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+
+# Set unbuffered output
+sys.stdout.reconfigure(line_buffering=True)
+sys.stderr.reconfigure(line_buffering=True)
 
 # Configure structured logging
 structlog.configure(
@@ -35,7 +48,7 @@ structlog.configure(
         structlog.processors.StackInfoRenderer(),
         structlog.processors.format_exc_info,
         structlog.processors.UnicodeDecoder(),
-        structlog.processors.JSONRenderer()
+        structlog.dev.ConsoleRenderer()  # Use ConsoleRenderer for readable output
     ],
     context_class=dict,
     logger_factory=structlog.stdlib.LoggerFactory(),
@@ -50,7 +63,7 @@ class AIServer:
     
     def __init__(self, config: Config):
         self.config = config
-        self.server: Optional[grpc.Server] = None
+        self.grpc_server: Optional[GrpcServer] = None
         self.db_manager: Optional[DatabaseManager] = None
         self.redis_cache: Optional[RedisCache] = None
         self.agent_manager: Optional[AgentManager] = None
@@ -78,34 +91,28 @@ class AIServer:
         await self.agent_manager.initialize()
         logger.info("Agent manager initialized")
         
-    def start_grpc_server(self):
+        # Create database tables if needed
+        await self.db_manager.create_tables()
+        logger.info("Database tables ready")
+        
+        # Try to compile proto files
+        compile_protos()
+        
+    async def start_grpc_server(self):
         """Start the gRPC server"""
-        self.server = grpc.server(
-            futures.ThreadPoolExecutor(max_workers=10),
-            options=[
-                ('grpc.max_send_message_length', 50 * 1024 * 1024),  # 50MB
-                ('grpc.max_receive_message_length', 50 * 1024 * 1024),  # 50MB
-            ]
-        )
+        # Create gRPC server
+        self.grpc_server = create_grpc_server(self.agent_manager)
         
-        # Add servicer
-        servicer = AIServicer(self.agent_manager)
-        # TODO: Add generated pb2_grpc services here
-        # ai_service_pb2_grpc.add_AIServiceServicer_to_server(servicer, self.server)
-        
-        # Listen on port
-        port = self.config.grpc.port
-        self.server.add_insecure_port(f'[::]:{port}')
-        self.server.start()
-        
-        logger.info(f"gRPC server started on port {port}")
+        # Start server
+        await self.grpc_server.start()
+        logger.info(f"gRPC server started on port {self.config.grpc.port}")
         
     async def shutdown(self):
         """Graceful shutdown"""
         logger.info("Shutting down AI Services...")
         
-        if self.server:
-            self.server.stop(grace=5)
+        if self.grpc_server:
+            await self.grpc_server.stop()
             
         if self.agent_manager:
             await self.agent_manager.shutdown()
@@ -122,7 +129,7 @@ class AIServer:
         """Run the server"""
         try:
             await self.initialize()
-            self.start_grpc_server()
+            await self.start_grpc_server()
             
             # Keep server running
             logger.info("AI Services ready to accept requests")
@@ -158,4 +165,5 @@ async def main():
 
 
 if __name__ == "__main__":
+    print("Starting AI Services...", flush=True)
     asyncio.run(main())

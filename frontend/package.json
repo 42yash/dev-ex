@@ -13,9 +13,13 @@
   },
   "dependencies": {
     "@grpc/grpc-js": "^1.9.13",
+    "@types/prismjs": "^1.26.5",
     "grpc-web": "^1.5.0",
     "pinia": "^2.1.7",
+    "prismjs": "^1.30.0",
+    "socket.io-client": "^4.8.1",
     "vue": "^3.4.15",
+    "vue-prism-component": "^2.0.0",
     "vue-router": "^4.2.5"
   },
   "devDependencies": {
