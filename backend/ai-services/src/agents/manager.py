@@ -7,6 +7,8 @@ import logging
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 import json
+import uuid
+from collections import OrderedDict
 
 import google.generativeai as genai
 
@@ -14,6 +16,7 @@ from .base import BaseAgent, AgentContext, AgentResult, AgentType, Conversationa
 from .architect import ArchitectAgent
 from .idea_generator import IdeaGeneratorAgent
 from .technical_writer import TechnicalWriterAgent
+from .execution_limiter import ExecutionLimiter, CircuitBreaker
 from ..config import Config
 from ..db.connection import DatabaseManager
 from ..cache.redis_client import RedisCache
@@ -33,8 +36,22 @@ class AgentManager:
         self.config = config
         self.db_manager = db_manager
         self.cache = cache
-        self.agents: Dict[str, BaseAgent] = {}
+        self.agents: OrderedDict[str, BaseAgent] = OrderedDict()
         self.model = None
+        
+        # Initialize execution limiter
+        self.execution_limiter = ExecutionLimiter(
+            max_execution_time=float(config.get("AI_TIMEOUT_SECONDS", 30)),
+            max_memory_mb=512,
+            max_concurrent_executions=10,
+            history_size=100
+        )
+        
+        # Initialize circuit breakers for each agent type
+        self.circuit_breakers: Dict[str, CircuitBreaker] = {}
+        
+        # Limit number of agents to prevent memory issues
+        self.max_agents = 50
         
     async def initialize(self):
         """Initialize the agent manager and all agents"""
@@ -139,7 +156,23 @@ class AgentManager:
     
     def register_agent(self, agent: BaseAgent):
         """Register an agent with the manager"""
+        # Check agent limit
+        if len(self.agents) >= self.max_agents:
+            # Remove oldest agent if we're at capacity
+            oldest_agent = next(iter(self.agents))
+            logger.warning(f"Agent limit reached, removing oldest agent: {oldest_agent}")
+            del self.agents[oldest_agent]
+            if oldest_agent in self.circuit_breakers:
+                del self.circuit_breakers[oldest_agent]
+        
         self.agents[agent.name] = agent
+        
+        # Create circuit breaker for this agent
+        self.circuit_breakers[agent.name] = CircuitBreaker(
+            failure_threshold=5,
+            recovery_timeout=60
+        )
+        
         logger.info(f"Registered agent: {agent.name}")
     
     def get_agent(self, name: str) -> Optional[BaseAgent]:
@@ -152,7 +185,7 @@ class AgentManager:
         input_data: Any,
         context: AgentContext
     ) -> AgentResult:
-        """Execute a specific agent"""
+        """Execute a specific agent with resource limits"""
         agent = self.get_agent(agent_name)
         if not agent:
             logger.error(f"Agent not found: {agent_name}")
@@ -161,6 +194,10 @@ class AgentManager:
                 output=None,
                 error=f"Agent '{agent_name}' not found"
             )
+        
+        # Limit context history to prevent unbounded growth
+        if len(context.previous_agents) > 20:
+            context.previous_agents = context.previous_agents[-20:]
         
         # Add agent to context history
         context.previous_agents.append(agent_name)
@@ -172,26 +209,62 @@ class AgentManager:
             logger.info(f"Using cached result for agent {agent_name}")
             return AgentResult(**cached_result)
         
-        # Execute agent
-        logger.info(f"Executing agent: {agent_name}")
-        result = await agent.execute(input_data, context)
+        # Execute agent with limiter and circuit breaker
+        execution_id = f"{agent_name}_{uuid.uuid4().hex[:8]}"
         
-        # Store execution in database
-        await self._store_execution(agent_name, context, input_data, result)
-        
-        # Cache successful results
-        if result.success:
-            await self.cache.set_agent_result(
-                agent_name,
-                input_hash,
-                {
-                    "success": result.success,
-                    "output": result.output,
-                    "metadata": result.metadata
-                }
+        try:
+            # Use circuit breaker
+            circuit_breaker = self.circuit_breakers.get(agent_name)
+            if circuit_breaker:
+                logger.info(f"Executing agent {agent_name} with circuit breaker")
+                result = await circuit_breaker.call(
+                    self.execution_limiter.execute_with_limits,
+                    execution_id,
+                    agent.execute,
+                    input_data,
+                    context
+                )
+            else:
+                # Execute with limiter only
+                result = await self.execution_limiter.execute_with_limits(
+                    execution_id,
+                    agent.execute,
+                    input_data,
+                    context
+                )
+            
+            # Store execution in database
+            await self._store_execution(agent_name, context, input_data, result)
+            
+            # Cache successful results
+            if result.success:
+                await self.cache.set_agent_result(
+                    agent_name,
+                    input_hash,
+                    {
+                        "success": result.success,
+                        "output": result.output,
+                        "metadata": result.metadata
+                    },
+                    ttl=3600  # 1 hour cache
+                )
+            
+            return result
+            
+        except TimeoutError as e:
+            logger.error(f"Agent {agent_name} execution timed out: {e}")
+            return AgentResult(
+                success=False,
+                output=None,
+                error=f"Execution timed out after {self.execution_limiter.max_execution_time}s"
             )
-        
-        return result
+        except Exception as e:
+            logger.error(f"Agent {agent_name} execution failed: {e}")
+            return AgentResult(
+                success=False,
+                output=None,
+                error=str(e)
+            )
     
     async def _store_execution(
         self,
@@ -298,4 +371,27 @@ class AgentManager:
     async def shutdown(self):
         """Shutdown the agent manager"""
         logger.info("Shutting down Agent Manager...")
-        # Cleanup resources if needed
+        
+        # Clean up execution limiter
+        self.execution_limiter.cleanup()
+        
+        # Clean up agents
+        self.agents.clear()
+        self.circuit_breakers.clear()
+        
+        # Force garbage collection
+        import gc
+        gc.collect()
+        
+        logger.info("Agent Manager shutdown complete")
+    
+    def get_execution_stats(self) -> Dict[str, Any]:
+        """Get execution statistics"""
+        return {
+            "agents_registered": len(self.agents),
+            "execution_stats": self.execution_limiter.get_stats(),
+            "circuit_breakers": {
+                name: cb.state 
+                for name, cb in self.circuit_breakers.items()
+            }
+        }

@@ -25,27 +25,27 @@ services:
     ports:
       - "${API_GATEWAY_PORT:-8080}:8080"
     environment:
-      - NODE_ENV=${NODE_ENV:-development}
-      - PORT=${API_GATEWAY_PORT:-8080}
+      - NODE_ENV=${NODE_ENV}
+      - PORT=${API_GATEWAY_PORT}
       - JWT_SECRET=${JWT_SECRET:?JWT_SECRET is required}
       - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET:?JWT_REFRESH_SECRET is required}
-      - JWT_EXPIRY=${JWT_EXPIRY:-15m}
-      - JWT_REFRESH_EXPIRY=${JWT_REFRESH_EXPIRY:-7d}
+      - JWT_EXPIRY=${JWT_EXPIRY}
+      - JWT_REFRESH_EXPIRY=${JWT_REFRESH_EXPIRY}
       - SESSION_SECRET=${SESSION_SECRET:?SESSION_SECRET is required}
-      - SESSION_TIMEOUT=${SESSION_TIMEOUT:-3600}
-      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
-      - AI_SERVICE_URL=${AI_SERVICE_URL:-ai-services:50051}
+      - SESSION_TIMEOUT=${SESSION_TIMEOUT}
+      - REDIS_URL=${REDIS_URL}
+      - AI_SERVICE_URL=${AI_SERVICE_URL}
       - DATABASE_URL=${DATABASE_URL}
-      - CORS_ORIGIN=${CORS_ORIGIN:-http://localhost:3000}
-      - CORS_CREDENTIALS=${CORS_CREDENTIALS:-true}
-      - RATE_LIMIT_WINDOW_MS=${RATE_LIMIT_WINDOW_MS:-900000}
-      - RATE_LIMIT_MAX_REQUESTS=${RATE_LIMIT_MAX_REQUESTS:-100}
-      - PASSWORD_MIN_LENGTH=${PASSWORD_MIN_LENGTH:-12}
-      - PASSWORD_REQUIRE_UPPERCASE=${PASSWORD_REQUIRE_UPPERCASE:-true}
-      - PASSWORD_REQUIRE_LOWERCASE=${PASSWORD_REQUIRE_LOWERCASE:-true}
-      - PASSWORD_REQUIRE_NUMBERS=${PASSWORD_REQUIRE_NUMBERS:-true}
-      - PASSWORD_REQUIRE_SPECIAL=${PASSWORD_REQUIRE_SPECIAL:-true}
-      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - CORS_ORIGIN=${CORS_ORIGIN}
+      - CORS_CREDENTIALS=${CORS_CREDENTIALS}
+      - RATE_LIMIT_WINDOW_MS=${RATE_LIMIT_WINDOW_MS}
+      - RATE_LIMIT_MAX_REQUESTS=${RATE_LIMIT_MAX_REQUESTS}
+      - PASSWORD_MIN_LENGTH=${PASSWORD_MIN_LENGTH}
+      - PASSWORD_REQUIRE_UPPERCASE=${PASSWORD_REQUIRE_UPPERCASE}
+      - PASSWORD_REQUIRE_LOWERCASE=${PASSWORD_REQUIRE_LOWERCASE}
+      - PASSWORD_REQUIRE_NUMBERS=${PASSWORD_REQUIRE_NUMBERS}
+      - PASSWORD_REQUIRE_SPECIAL=${PASSWORD_REQUIRE_SPECIAL}
+      - LOG_LEVEL=${LOG_LEVEL}
     volumes:
       - ./backend/gateway:/app
       - /app/node_modules
@@ -66,14 +66,18 @@ services:
       context: ./backend/ai-services
       dockerfile: Dockerfile.dev
     ports:
-      - "50051:50051"
+      - "${AI_SERVICE_PORT:-50051}:50051"
     environment:
       - PYTHONUNBUFFERED=1
-      - PYTHON_ENV=development
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - DATABASE_URL=postgresql://devex:devex@postgres:5432/devex
-      - REDIS_URL=redis://redis:6379
-      - GRPC_PORT=50051
+      - PYTHON_ENV=${PYTHON_ENV}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:?GEMINI_API_KEY is required}
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - GRPC_PORT=${AI_SERVICE_PORT:-50051}
+      - AI_MODEL=${AI_MODEL}
+      - AI_TEMPERATURE=${AI_TEMPERATURE}
+      - AI_MAX_TOKENS=${AI_MAX_TOKENS}
+      - AI_TIMEOUT_SECONDS=${AI_TIMEOUT_SECONDS}
     volumes:
       - ./backend/ai-services:/app
       - ./proto:/proto
@@ -87,8 +91,8 @@ services:
   postgres:
     image: ankane/pgvector:latest
     environment:
-      - POSTGRES_DB=${DB_NAME:-devex}
-      - POSTGRES_USER=${DB_USER:-devex}
+      - POSTGRES_DB=${DB_NAME}
+      - POSTGRES_USER=${DB_USER}
       - POSTGRES_PASSWORD=${DB_PASSWORD:?DB_PASSWORD is required}
     ports:
       - "5432:5432"
@@ -111,9 +115,9 @@ services:
       - "6379:6379"
     volumes:
       - redis_data:/data
-    command: redis-server --appendonly yes
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-changeme}
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-changeme}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -132,13 +136,13 @@ services:
       - N8N_HOST=localhost
       - N8N_PORT=5678
       - N8N_PROTOCOL=http
-      - NODE_ENV=${NODE_ENV:-development}
+      - NODE_ENV=${NODE_ENV}
       - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY:?N8N_ENCRYPTION_KEY is required}
       - DB_TYPE=postgresdb
       - DB_POSTGRESDB_HOST=postgres
       - DB_POSTGRESDB_PORT=5432
       - DB_POSTGRESDB_DATABASE=n8n
-      - DB_POSTGRESDB_USER=${DB_USER:-devex}
+      - DB_POSTGRESDB_USER=${DB_USER}
       - DB_POSTGRESDB_PASSWORD=${DB_PASSWORD:?DB_PASSWORD is required}
     volumes:
       - n8n_data:/home/node/.n8n

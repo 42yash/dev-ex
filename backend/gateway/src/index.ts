@@ -3,6 +3,7 @@ import cors from '@fastify/cors'
 import helmet from '@fastify/helmet'
 import jwt from '@fastify/jwt'
 import rateLimit from '@fastify/rate-limit'
+import { env } from './utils/envValidator.js'  // Validate environment on startup
 import { config } from './config/index.js'
 import { logger } from './utils/logger.js'
 import { healthRoutes } from './routes/health.js'

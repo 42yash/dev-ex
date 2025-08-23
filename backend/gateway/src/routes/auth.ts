@@ -1,29 +1,19 @@
 import { FastifyPluginAsync } from 'fastify'
 import bcrypt from 'bcryptjs'
-import { z } from 'zod'
 import { query, transaction } from '../db/index.js'
 import { setSession } from '../services/redis.js'
 import { logger } from '../utils/logger.js'
 import { passwordValidator } from '../utils/passwordValidator.js'
 import { authRateLimit, publicRateLimit } from '../middleware/rateLimiter.js'
-
-// Validation schemas
-const registerSchema = z.object({
-  email: z.string().email(),
-  password: z.string(),
-  name: z.string().optional()
-})
-
-const loginSchema = z.object({
-  email: z.string().email(),
-  password: z.string()
-})
+import { validationMiddleware } from '../middleware/validation.js'
 
 export const authRoutes: FastifyPluginAsync = async (fastify) => {
-  // Register endpoint with rate limiting
-  fastify.post('/register', authRateLimit, async (request, reply) => {
+  // Register endpoint with rate limiting and validation
+  fastify.post('/register', {
+    preHandler: [authRateLimit, validationMiddleware.auth.register]
+  }, async (request, reply) => {
     try {
-      const body = registerSchema.parse(request.body)
+      const body = request.body as { email: string; password: string; name?: string }
       
       // Validate password complexity
       const passwordValidation = passwordValidator.validate(body.password)
@@ -102,10 +92,12 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
     }
   })
   
-  // Login endpoint with rate limiting
-  fastify.post('/login', authRateLimit, async (request, reply) => {
+  // Login endpoint with rate limiting and validation
+  fastify.post('/login', {
+    preHandler: [authRateLimit, validationMiddleware.auth.login]
+  }, async (request, reply) => {
     try {
-      const body = loginSchema.parse(request.body)
+      const body = request.body as { email: string; password: string }
       
       // Find user
       const users = await query(
