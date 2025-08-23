@@ -4,11 +4,13 @@ import { z } from 'zod'
 import { query, transaction } from '../db/index.js'
 import { setSession } from '../services/redis.js'
 import { logger } from '../utils/logger.js'
+import { passwordValidator } from '../utils/passwordValidator.js'
+import { authRateLimit, publicRateLimit } from '../middleware/rateLimiter.js'
 
 // Validation schemas
 const registerSchema = z.object({
   email: z.string().email(),
-  password: z.string().min(8),
+  password: z.string(),
   name: z.string().optional()
 })
 
@@ -18,10 +20,20 @@ const loginSchema = z.object({
 })
 
 export const authRoutes: FastifyPluginAsync = async (fastify) => {
-  // Register endpoint
-  fastify.post('/register', async (request, reply) => {
+  // Register endpoint with rate limiting
+  fastify.post('/register', authRateLimit, async (request, reply) => {
     try {
       const body = registerSchema.parse(request.body)
+      
+      // Validate password complexity
+      const passwordValidation = passwordValidator.validate(body.password)
+      if (!passwordValidation.isValid) {
+        return reply.status(400).send({
+          error: 'Password does not meet security requirements',
+          details: passwordValidation.errors,
+          strength: passwordValidation.strength
+        })
+      }
       
       // Check if user already exists
       const existingUsers = await query(
@@ -35,8 +47,8 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
         })
       }
       
-      // Hash password
-      const passwordHash = await bcrypt.hash(body.password, 10)
+      // Hash password with stronger settings
+      const passwordHash = await bcrypt.hash(body.password, 12)
       
       // Create user
       const result = await query(
@@ -90,8 +102,8 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
     }
   })
   
-  // Login endpoint
-  fastify.post('/login', async (request, reply) => {
+  // Login endpoint with rate limiting
+  fastify.post('/login', authRateLimit, async (request, reply) => {
     try {
       const body = loginSchema.parse(request.body)
       
@@ -249,6 +261,30 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
       
       return reply.send({
         user: users[0]
+      })
+    } catch (error) {
+      throw error
+    }
+  })
+  
+  // Password strength checker endpoint
+  fastify.post('/password-strength', async (request, reply) => {
+    try {
+      const { password } = request.body as { password: string }
+      
+      if (!password) {
+        return reply.status(400).send({
+          error: 'Password is required'
+        })
+      }
+      
+      const validation = passwordValidator.validate(password)
+      
+      return reply.send({
+        strength: validation.strength,
+        score: validation.score,
+        isValid: validation.isValid,
+        suggestions: validation.errors
       })
     } catch (error) {
       throw error

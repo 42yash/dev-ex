@@ -43,8 +43,30 @@ async function start() {
           styleSrc: ["'self'", "'unsafe-inline'"],
           scriptSrc: ["'self'"],
           imgSrc: ["'self'", 'data:', 'https:'],
+          connectSrc: ["'self'"],
+          fontSrc: ["'self'", 'https:', 'data:'],
+          objectSrc: ["'none'"],
+          mediaSrc: ["'self'"],
+          frameSrc: ["'none'"],
         }
-      }
+      },
+      crossOriginEmbedderPolicy: true,
+      crossOriginOpenerPolicy: true,
+      crossOriginResourcePolicy: { policy: "cross-origin" },
+      dnsPrefetchControl: { allow: false },
+      frameguard: { action: 'deny' },
+      hidePoweredBy: true,
+      hsts: {
+        maxAge: 31536000,
+        includeSubDomains: true,
+        preload: true
+      },
+      ieNoOpen: true,
+      noSniff: true,
+      originAgentCluster: true,
+      permittedCrossDomainPolicies: false,
+      referrerPolicy: { policy: "same-origin" },
+      xssFilter: true
     })
 
     await server.register(cors, {
@@ -59,9 +81,30 @@ async function start() {
       }
     })
 
+    // Configure rate limiting
     await server.register(rateLimit, {
-      max: config.rateLimit.max,
-      timeWindow: config.rateLimit.windowMs
+      global: true,
+      max: config.rateLimit.max || 100,
+      timeWindow: config.rateLimit.windowMs || 900000, // 15 minutes
+      cache: 10000,
+      allowList: [], // Add trusted IPs if needed
+      redis: initializeRedis, // Use Redis for distributed rate limiting
+      skipSuccessfulRequests: false,
+      keyGenerator: (request: any) => {
+        // Rate limit by user ID if authenticated, otherwise by IP
+        return request.user?.id || request.ip
+      },
+      errorResponseBuilder: (request: any, context: any) => {
+        return {
+          statusCode: 429,
+          error: 'Too Many Requests',
+          message: `Rate limit exceeded, retry in ${context.after}`,
+          retryAfter: context.after,
+          limit: context.max,
+          remaining: context.remaining,
+          resetTime: new Date(context.ttl).toISOString()
+        }
+      }
     })
 
     // JWT decorator - must be before routes

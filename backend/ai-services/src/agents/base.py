@@ -92,6 +92,7 @@ class BaseAgent(ABC):
         self.config = config or {}
         self.status = AgentStatus.IDLE
         self.execution_history: List[AgentResult] = []
+        self.max_history_size = config.get('max_history_size', 100)  # Limit history size
         
         # Create tools mapping
         self.tool_map = {tool.name: tool for tool in self.tools}
@@ -212,6 +213,21 @@ Respond in the following JSON format:
     async def postprocess(self, output: Any, context: AgentContext) -> Any:
         """Postprocess output data"""
         return output  # Override in subclasses
+    
+    def add_to_history(self, result: AgentResult):
+        """Add result to execution history with size limit"""
+        self.execution_history.append(result)
+        # Keep only the most recent entries
+        if len(self.execution_history) > self.max_history_size:
+            self.execution_history = self.execution_history[-self.max_history_size:]
+    
+    def clear_history(self):
+        """Clear execution history to free memory"""
+        self.execution_history.clear()
+    
+    def get_recent_history(self, n: int = 10) -> List[AgentResult]:
+        """Get n most recent execution results"""
+        return self.execution_history[-n:] if self.execution_history else []
 
 
 class ConversationalAgent(BaseAgent):
@@ -220,14 +236,15 @@ class ConversationalAgent(BaseAgent):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.conversation_history: List[Dict[str, str]] = []
+        self.max_conversation_history = self.config.get('max_conversation_history', 50)
     
     async def execute(self, input_data: str, context: AgentContext) -> AgentResult:
         """Execute conversational logic"""
         start_time = datetime.utcnow()
         
         try:
-            # Add to conversation history
-            self.conversation_history.append({
+            # Add to conversation history with size limit
+            self.add_to_conversation({
                 "role": "user",
                 "content": input_data
             })
@@ -241,8 +258,8 @@ class ConversationalAgent(BaseAgent):
             # Generate final response
             response = await self.generate_response(input_data, action_result, context)
             
-            # Add to conversation history
-            self.conversation_history.append({
+            # Add to conversation history with size limit
+            self.add_to_conversation({
                 "role": "assistant",
                 "content": response
             })
@@ -300,6 +317,21 @@ Generate a helpful and informative response to the user based on the conversatio
             f"{msg['role'].capitalize()}: {msg['content']}"
             for msg in recent_messages
         ])
+    
+    def add_to_conversation(self, message: Dict[str, str]):
+        """Add message to conversation history with size limit"""
+        self.conversation_history.append(message)
+        # Keep only the most recent messages
+        if len(self.conversation_history) > self.max_conversation_history:
+            # Keep first message for context and recent messages
+            self.conversation_history = (
+                self.conversation_history[:1] + 
+                self.conversation_history[-(self.max_conversation_history - 1):]
+            )
+    
+    def clear_conversation(self):
+        """Clear conversation history to free memory"""
+        self.conversation_history.clear()
 
 
 class WorkflowAgent(BaseAgent):

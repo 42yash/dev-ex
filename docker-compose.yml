@@ -23,15 +23,29 @@ services:
       context: ./backend/gateway
       dockerfile: Dockerfile.dev
     ports:
-      - "8080:8080"
+      - "${API_GATEWAY_PORT:-8080}:8080"
     environment:
-      - NODE_ENV=development
-      - PORT=8080
-      - JWT_SECRET=${JWT_SECRET:-dev-secret-change-in-production}
-      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET:-dev-refresh-secret}
-      - REDIS_URL=redis://redis:6379
-      - AI_SERVICE_URL=ai-services:50051
-      - DATABASE_URL=postgresql://devex:devex@postgres:5432/devex
+      - NODE_ENV=${NODE_ENV:-development}
+      - PORT=${API_GATEWAY_PORT:-8080}
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET is required}
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET:?JWT_REFRESH_SECRET is required}
+      - JWT_EXPIRY=${JWT_EXPIRY:-15m}
+      - JWT_REFRESH_EXPIRY=${JWT_REFRESH_EXPIRY:-7d}
+      - SESSION_SECRET=${SESSION_SECRET:?SESSION_SECRET is required}
+      - SESSION_TIMEOUT=${SESSION_TIMEOUT:-3600}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+      - AI_SERVICE_URL=${AI_SERVICE_URL:-ai-services:50051}
+      - DATABASE_URL=${DATABASE_URL}
+      - CORS_ORIGIN=${CORS_ORIGIN:-http://localhost:3000}
+      - CORS_CREDENTIALS=${CORS_CREDENTIALS:-true}
+      - RATE_LIMIT_WINDOW_MS=${RATE_LIMIT_WINDOW_MS:-900000}
+      - RATE_LIMIT_MAX_REQUESTS=${RATE_LIMIT_MAX_REQUESTS:-100}
+      - PASSWORD_MIN_LENGTH=${PASSWORD_MIN_LENGTH:-12}
+      - PASSWORD_REQUIRE_UPPERCASE=${PASSWORD_REQUIRE_UPPERCASE:-true}
+      - PASSWORD_REQUIRE_LOWERCASE=${PASSWORD_REQUIRE_LOWERCASE:-true}
+      - PASSWORD_REQUIRE_NUMBERS=${PASSWORD_REQUIRE_NUMBERS:-true}
+      - PASSWORD_REQUIRE_SPECIAL=${PASSWORD_REQUIRE_SPECIAL:-true}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
     volumes:
       - ./backend/gateway:/app
       - /app/node_modules
@@ -73,9 +87,9 @@ services:
   postgres:
     image: ankane/pgvector:latest
     environment:
-      - POSTGRES_DB=devex
-      - POSTGRES_USER=devex
-      - POSTGRES_PASSWORD=devex
+      - POSTGRES_DB=${DB_NAME:-devex}
+      - POSTGRES_USER=${DB_USER:-devex}
+      - POSTGRES_PASSWORD=${DB_PASSWORD:?DB_PASSWORD is required}
     ports:
       - "5432:5432"
     volumes:
@@ -113,19 +127,19 @@ services:
       - "5678:5678"
     environment:
       - N8N_BASIC_AUTH_ACTIVE=true
-      - N8N_BASIC_AUTH_USER=${N8N_USER:-admin}
-      - N8N_BASIC_AUTH_PASSWORD=${N8N_PASSWORD:-admin}
+      - N8N_BASIC_AUTH_USER=${N8N_USER:?N8N_USER is required}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_PASSWORD:?N8N_PASSWORD is required}
       - N8N_HOST=localhost
       - N8N_PORT=5678
       - N8N_PROTOCOL=http
-      - NODE_ENV=development
-      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY:-test-key}
+      - NODE_ENV=${NODE_ENV:-development}
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY:?N8N_ENCRYPTION_KEY is required}
       - DB_TYPE=postgresdb
       - DB_POSTGRESDB_HOST=postgres
       - DB_POSTGRESDB_PORT=5432
       - DB_POSTGRESDB_DATABASE=n8n
-      - DB_POSTGRESDB_USER=devex
-      - DB_POSTGRESDB_PASSWORD=devex
+      - DB_POSTGRESDB_USER=${DB_USER:-devex}
+      - DB_POSTGRESDB_PASSWORD=${DB_PASSWORD:?DB_PASSWORD is required}
     volumes:
       - n8n_data:/home/node/.n8n
       - ./workflows:/home/node/workflows

@@ -166,11 +166,11 @@ class AgentManager:
         context.previous_agents.append(agent_name)
         
         # Check cache for similar requests
-        cache_key = f"agent:{agent_name}:{hash(str(input_data))}"
-        cached_result = await self.cache.get(cache_key)
+        input_hash = str(hash(str(input_data)))
+        cached_result = await self.cache.get_agent_result(agent_name, input_hash)
         if cached_result:
             logger.info(f"Using cached result for agent {agent_name}")
-            return AgentResult(**json.loads(cached_result))
+            return AgentResult(**cached_result)
         
         # Execute agent
         logger.info(f"Executing agent: {agent_name}")
@@ -181,14 +181,14 @@ class AgentManager:
         
         # Cache successful results
         if result.success:
-            await self.cache.set(
-                cache_key,
-                json.dumps({
+            await self.cache.set_agent_result(
+                agent_name,
+                input_hash,
+                {
                     "success": result.success,
                     "output": result.output,
                     "metadata": result.metadata
-                }),
-                ttl=300  # Cache for 5 minutes
+                }
             )
         
         return result
