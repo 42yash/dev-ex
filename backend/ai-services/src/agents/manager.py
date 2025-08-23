@@ -41,7 +41,7 @@ class AgentManager:
         
         # Initialize execution limiter
         self.execution_limiter = ExecutionLimiter(
-            max_execution_time=float(config.get("AI_TIMEOUT_SECONDS", 30)),
+            max_execution_time=float(config.gemini.timeout),
             max_memory_mb=512,
             max_concurrent_executions=10,
             history_size=100

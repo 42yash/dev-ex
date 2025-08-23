@@ -11,7 +11,7 @@ import { authRoutes } from './routes/auth.js'
 import { chatRoutes } from './routes/chat.js'
 import { errorHandler } from './middleware/errorHandler.js'
 import { initializeDatabase } from './db/index.js'
-import { initializeRedis } from './services/redis.js'
+import { initializeRedis, getRedis } from './services/redis.js'
 import { initializeGrpcClients } from './services/grpc.js'
 import { setupWebSocket } from './services/websocket.js'
 
@@ -89,7 +89,7 @@ async function start() {
       timeWindow: config.rateLimit.windowMs || 900000, // 15 minutes
       cache: 10000,
       allowList: [], // Add trusted IPs if needed
-      redis: initializeRedis, // Use Redis for distributed rate limiting
+      redis: getRedis(), // Use Redis for distributed rate limiting
       skipSuccessfulRequests: false,
       keyGenerator: (request: any) => {
         // Rate limit by user ID if authenticated, otherwise by IP

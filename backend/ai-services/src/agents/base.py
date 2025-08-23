@@ -92,7 +92,7 @@ class BaseAgent(ABC):
         self.config = config or {}
         self.status = AgentStatus.IDLE
         self.execution_history: List[AgentResult] = []
-        self.max_history_size = config.get('max_history_size', 100)  # Limit history size
+        self.max_history_size = self.config.get('max_history_size', 100)  # Limit history size
         
         # Create tools mapping
         self.tool_map = {tool.name: tool for tool in self.tools}

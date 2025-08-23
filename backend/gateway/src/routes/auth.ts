@@ -10,7 +10,8 @@ import { validationMiddleware } from '../middleware/validation.js'
 export const authRoutes: FastifyPluginAsync = async (fastify) => {
   // Register endpoint with rate limiting and validation
   fastify.post('/register', {
-    preHandler: [authRateLimit, validationMiddleware.auth.register]
+    preHandler: [validationMiddleware.auth.register],
+    ...authRateLimit.config
   }, async (request, reply) => {
     try {
       const body = request.body as { email: string; password: string; name?: string }
@@ -94,7 +95,8 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
   
   // Login endpoint with rate limiting and validation
   fastify.post('/login', {
-    preHandler: [authRateLimit, validationMiddleware.auth.login]
+    preHandler: [validationMiddleware.auth.login],
+    ...authRateLimit.config
   }, async (request, reply) => {
     try {
       const body = request.body as { email: string; password: string }
