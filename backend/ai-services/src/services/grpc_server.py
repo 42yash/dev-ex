@@ -293,10 +293,20 @@ class GrpcServer:
             chat_servicer = ChatServicer(self.agent_manager)
             health_servicer = HealthServicer()
             
+            # Add workflow servicer
+            from .workflow_service import WorkflowService
+            workflow_servicer = WorkflowService(self.agent_manager)
+            
             # Register services (would use generated registration methods)
             try:
                 chat_pb2_grpc.add_ChatServiceServicer_to_server(
                     chat_servicer, self.server
+                )
+                
+                # Register workflow service
+                from ..proto import workflow_pb2_grpc
+                workflow_pb2_grpc.add_WorkflowServiceServicer_to_server(
+                    workflow_servicer, self.server
                 )
             except:
                 logger.warning("Proto files not generated yet, skipping registration")

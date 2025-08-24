@@ -22,6 +22,7 @@
     "pinia": "^2.1.7",
     "prismjs": "^1.30.0",
     "socket.io-client": "^4.8.1",
+    "uuid": "^9.0.1",
     "vue": "^3.4.15",
     "vue-prism-component": "^2.0.0",
     "vue-router": "^4.2.5"
@@ -30,6 +31,7 @@
     "@rushstack/eslint-patch": "^1.6.1",
     "@tsconfig/node20": "^20.1.2",
     "@types/node": "^20.11.0",
+    "@types/uuid": "^9.0.7",
     "@vitejs/plugin-vue": "^5.0.3",
     "@vue/eslint-config-prettier": "^9.0.0",
     "@vue/eslint-config-typescript": "^12.0.0",

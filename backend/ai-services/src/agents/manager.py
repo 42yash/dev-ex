@@ -16,7 +16,10 @@ from .base import BaseAgent, AgentContext, AgentResult, AgentType, Conversationa
 from .architect import ArchitectAgent
 from .idea_generator import IdeaGeneratorAgent
 from .technical_writer import TechnicalWriterAgent
+from .agent_pool_maker import AgentPoolMaker
+from .agent_darwin import AgentDarwin
 from .execution_limiter import ExecutionLimiter, CircuitBreaker
+from .orchestrator import WorkflowOrchestrator
 from ..config import Config
 from ..db.connection import DatabaseManager
 from ..cache.redis_client import RedisCache
@@ -53,6 +56,9 @@ class AgentManager:
         # Limit number of agents to prevent memory issues
         self.max_agents = 50
         
+        # Initialize workflow orchestrator (will be set in initialize)
+        self.workflow_orchestrator = None
+        
     async def initialize(self):
         """Initialize the agent manager and all agents"""
         logger.info("Initializing Agent Manager...")
@@ -77,6 +83,20 @@ class AgentManager:
         # Load custom agents from database
         await self._load_custom_agents()
         
+        # Initialize workflow orchestrator
+        pool_maker = self.get_agent("agent_pool_maker")
+        darwin = self.get_agent("agent_darwin")
+        if pool_maker and darwin:
+            self.workflow_orchestrator = WorkflowOrchestrator(
+                config=self.config,
+                db_manager=self.db_manager,
+                cache=self.cache,
+                agent_pool_maker=pool_maker,
+                agent_darwin=darwin
+            )
+            await self.workflow_orchestrator.initialize()
+            logger.info("Initialized Workflow Orchestrator")
+        
         logger.info(f"Initialized {len(self.agents)} agents")
     
     async def _initialize_core_agents(self):
@@ -93,6 +113,20 @@ class AgentManager:
         # Agent 2: The Technical Writer
         technical_writer = TechnicalWriterAgent(model=self.model)
         self.register_agent(technical_writer)
+        
+        # Agent Pool Maker (Agent 0) - Master Orchestrator
+        agent_pool_maker = AgentPoolMaker(
+            config=self.config,
+            execution_limiter=self.execution_limiter
+        )
+        self.register_agent(agent_pool_maker)
+        
+        # Agent Darwin - Evolution System
+        agent_darwin = AgentDarwin(
+            config=self.config,
+            execution_limiter=self.execution_limiter
+        )
+        self.register_agent(agent_darwin)
         
         # Basic Chat Agent
         chat_agent = ConversationalAgent(
@@ -368,12 +402,34 @@ class AgentManager:
                 except:
                     pass  # Keep original content if not JSON
             
-            return {
-                "content": content,
-                "widgets": [],  # TODO: Implement widget generation
-                "suggested_actions": [],
-                "metadata": result.metadata
-            }
+            # Parse response to generate widgets
+            from ..utils.response_parser import ResponseParser
+            parser = ResponseParser()
+            parsed_response = parser.parse_response(content, context.variables)
+            
+            # Check if this is asking about building something
+            if any(phrase in message.lower() for phrase in ['build', 'create', 'develop', 'make']):
+                # Return structured response with widgets
+                return {
+                    "content": "",  # No plain text, just widgets
+                    "widgets": parsed_response.get("widgets", []),
+                    "suggested_actions": [
+                        {
+                            "id": "start_workflow",
+                            "label": "Start Workflow",
+                            "action": "create_workflow"
+                        }
+                    ],
+                    "metadata": parsed_response.get("metadata", {})
+                }
+            else:
+                # Return response with optional widgets
+                return {
+                    "content": content if not parsed_response.get("widgets") else "",
+                    "widgets": parsed_response.get("widgets", []),
+                    "suggested_actions": [],
+                    "metadata": result.metadata
+                }
         else:
             return {
                 "content": "I apologize, but I encountered an error processing your request. Please try again.",
@@ -381,9 +437,41 @@ class AgentManager:
                 "metadata": {}
             }
     
+    async def create_workflow(self, user_input: str, session_id: str, user_id: str, options: Optional[Dict[str, Any]] = None):
+        """Create a workflow from user input"""
+        if not self.workflow_orchestrator:
+            logger.error("Workflow orchestrator not initialized")
+            return None
+        
+        return await self.workflow_orchestrator.create_workflow(
+            user_input=user_input,
+            session_id=session_id,
+            user_id=user_id,
+            options=options
+        )
+    
+    async def execute_workflow(self, workflow_id: str):
+        """Execute a workflow"""
+        if not self.workflow_orchestrator:
+            logger.error("Workflow orchestrator not initialized")
+            return {"error": "Workflow orchestrator not available"}
+        
+        return await self.workflow_orchestrator.execute_workflow(workflow_id)
+    
+    async def get_workflow_status(self, workflow_id: str):
+        """Get workflow status"""
+        if not self.workflow_orchestrator:
+            return {"error": "Workflow orchestrator not available"}
+        
+        return await self.workflow_orchestrator.get_workflow_status(workflow_id)
+    
     async def shutdown(self):
         """Shutdown the agent manager"""
         logger.info("Shutting down Agent Manager...")
+        
+        # Shutdown workflow orchestrator
+        if self.workflow_orchestrator:
+            await self.workflow_orchestrator.shutdown()
         
         # Clean up execution limiter
         self.execution_limiter.cleanup()

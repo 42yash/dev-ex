@@ -2,14 +2,17 @@ import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
 import { chatApi } from '@/services/api'
 import { wsService, type ChatMessageEvent, type StreamingMessageEvent, type SessionUpdateEvent } from '@/services/websocket'
+import type { Widget, WidgetResponse } from '@/types/widget'
 
 export interface Message {
   id: string
   sessionId: string
   sender: 'user' | 'ai'
   content: string
-  timestamp: string
-  widgets?: any[]
+  timestamp: string | Date
+  text?: string
+  widgets?: Widget[]
+  widgetResponse?: WidgetResponse
   metadata?: Record<string, any>
 }
 
