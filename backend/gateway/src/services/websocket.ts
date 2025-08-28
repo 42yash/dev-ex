@@ -100,6 +100,41 @@ export function setupWebSocket(server: HTTPServer, _fastify: any): SocketIOServe
       })
     })
     
+    // Handle stream control
+    socket.on('stream_control', async (data: { 
+      action: 'cancel' | 'pause' | 'resume',
+      sessionId: string,
+      messageId: string 
+    }) => {
+      try {
+        const { action, sessionId, messageId } = data
+        
+        // Verify user has access to this session
+        const sessions = await query(
+          'SELECT id FROM sessions WHERE id = $1 AND user_id = $2',
+          [sessionId, socket.userId]
+        )
+        
+        if (sessions.length === 0) {
+          socket.emit('error', { message: 'Session not found or access denied' })
+          return
+        }
+        
+        // Emit control event to all listeners
+        io.to(`session:${sessionId}`).emit('stream_control_event', {
+          action,
+          sessionId,
+          messageId,
+          userId: socket.userId
+        })
+        
+        logger.info(`Stream control: ${action} for message ${messageId} in session ${sessionId}`)
+      } catch (error) {
+        logger.error('Error handling stream control:', error)
+        socket.emit('error', { message: 'Failed to control stream' })
+      }
+    })
+    
     // Handle disconnect
     socket.on('disconnect', () => {
       logger.info(`User disconnected: ${socket.email} (${socket.id})`)
@@ -145,13 +180,101 @@ export function streamMessage(
   sessionId: string,
   messageId: string,
   chunk: string,
-  isComplete: boolean = false
+  isComplete: boolean = false,
+  metadata?: {
+    tokens?: number
+    model?: string
+    latency?: number
+    firstTokenLatency?: number
+  }
 ) {
   emitToSession(io, sessionId, 'message_stream', {
     sessionId,
     messageId,
     chunk,
-    isComplete
+    isComplete,
+    metadata,
+    timestamp: Date.now()
+  })
+}
+
+// Enhanced streaming functions for token-by-token updates
+export interface StreamingEvent {
+  type: 'stream.start' | 'stream.chunk' | 'stream.end' | 'stream.error' | 'stream.heartbeat'
+  sessionId: string
+  messageId: string
+  chunk?: string
+  metadata?: Record<string, any>
+  error?: string
+  timestamp: number
+}
+
+export function emitStreamEvent(
+  io: SocketIOServer,
+  event: StreamingEvent
+) {
+  emitToSession(io, event.sessionId, 'stream_event', event)
+}
+
+export function startStream(
+  io: SocketIOServer,
+  sessionId: string,
+  messageId: string,
+  metadata?: Record<string, any>
+) {
+  emitStreamEvent(io, {
+    type: 'stream.start',
+    sessionId,
+    messageId,
+    metadata,
+    timestamp: Date.now()
+  })
+}
+
+export function streamChunk(
+  io: SocketIOServer,
+  sessionId: string,
+  messageId: string,
+  chunk: string,
+  metadata?: Record<string, any>
+) {
+  emitStreamEvent(io, {
+    type: 'stream.chunk',
+    sessionId,
+    messageId,
+    chunk,
+    metadata,
+    timestamp: Date.now()
+  })
+}
+
+export function endStream(
+  io: SocketIOServer,
+  sessionId: string,
+  messageId: string,
+  metadata?: Record<string, any>
+) {
+  emitStreamEvent(io, {
+    type: 'stream.end',
+    sessionId,
+    messageId,
+    metadata,
+    timestamp: Date.now()
+  })
+}
+
+export function streamError(
+  io: SocketIOServer,
+  sessionId: string,
+  messageId: string,
+  error: string
+) {
+  emitStreamEvent(io, {
+    type: 'stream.error',
+    sessionId,
+    messageId,
+    error,
+    timestamp: Date.now()
   })
 }
 

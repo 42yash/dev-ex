@@ -9,11 +9,18 @@ import { logger } from './utils/logger.js'
 import { healthRoutes } from './routes/health.js'
 import { authRoutes } from './routes/auth.js'
 import { chatRoutes } from './routes/chat.js'
+import { streamRoutes } from './routes/stream.js'
+import { apiKeyRoutes } from './routes/apiKeys.js'
+import { securityRoutes } from './routes/security.js'
 import { errorHandler } from './middleware/errorHandler.js'
-import { initializeDatabase } from './db/index.js'
+import { initializeDatabase, pool } from './db/index.js'
 import { initializeRedis, getRedis } from './services/redis.js'
 import { initializeGrpcClients } from './services/grpc.js'
 import { setupWebSocket } from './services/websocket.js'
+import { securityPlugin, requestIdPlugin, corsOptions } from './middleware/security.js'
+import { initSecureDatabase } from './services/secureDatabase.js'
+import { AuditLogger } from './services/auditLogger.js'
+import { startSecurityCronJobs, stopSecurityCronJobs } from './services/cronJobs.js'
 
 const server = Fastify({
   logger: true
@@ -27,6 +34,10 @@ async function start() {
     // Initialize database
     await initializeDatabase()
     logger.info('Database initialized')
+    
+    // Initialize secure database service
+    initSecureDatabase(pool)
+    logger.info('Secure database service initialized')
 
     // Initialize Redis
     await initializeRedis()
@@ -36,44 +47,12 @@ async function start() {
     await initializeGrpcClients()
     logger.info('gRPC clients initialized')
 
-    // Register plugins
-    await server.register(helmet, {
-      contentSecurityPolicy: {
-        directives: {
-          defaultSrc: ["'self'"],
-          styleSrc: ["'self'", "'unsafe-inline'"],
-          scriptSrc: ["'self'"],
-          imgSrc: ["'self'", 'data:', 'https:'],
-          connectSrc: ["'self'"],
-          fontSrc: ["'self'", 'https:', 'data:'],
-          objectSrc: ["'none'"],
-          mediaSrc: ["'self'"],
-          frameSrc: ["'none'"],
-        }
-      },
-      crossOriginEmbedderPolicy: true,
-      crossOriginOpenerPolicy: true,
-      crossOriginResourcePolicy: { policy: "cross-origin" },
-      dnsPrefetchControl: { allow: false },
-      frameguard: { action: 'deny' },
-      hidePoweredBy: true,
-      hsts: {
-        maxAge: 31536000,
-        includeSubDomains: true,
-        preload: true
-      },
-      ieNoOpen: true,
-      noSniff: true,
-      originAgentCluster: true,
-      permittedCrossDomainPolicies: false,
-      referrerPolicy: { policy: "same-origin" },
-      xssFilter: true
-    })
-
-    await server.register(cors, {
-      origin: config.cors.origin,
-      credentials: true
-    })
+    // Register security plugins
+    await server.register(requestIdPlugin)
+    await server.register(securityPlugin)
+    
+    // Register CORS with enhanced security options
+    await server.register(cors, corsOptions)
 
     await server.register(jwt, {
       secret: config.jwt.secret,
@@ -124,6 +103,9 @@ async function start() {
     await server.register(healthRoutes, { prefix: '/health' })
     await server.register(authRoutes, { prefix: '/api/v1/auth' })
     await server.register(chatRoutes, { prefix: '/api/v1/chat' })
+    await server.register(streamRoutes, { prefix: '/api/v1/stream' })
+    await server.register(apiKeyRoutes, { prefix: '/api/v1' })
+    await server.register(securityRoutes, { prefix: '/api/v1/security' })
 
     // Start server
     await server.listen({ 
@@ -137,6 +119,10 @@ async function start() {
     
     // Make io available globally for routes to use
     ;(server as any).io = io
+    
+    // Start security cron jobs
+    startSecurityCronJobs()
+    logger.info('Security cron jobs started')
 
     ;(server as any).log.info(`Server listening on http://0.0.0.0:${config.app.port}`)
   } catch (err) {
@@ -148,7 +134,16 @@ async function start() {
 // Handle graceful shutdown
 const gracefulShutdown = async () => {
   logger.info('Shutting down gracefully...')
+  
+  // Stop cron jobs
+  stopSecurityCronJobs()
+  
+  // Flush audit logs
+  await AuditLogger.flush()
+  
+  // Close server
   await server.close()
+  
   process.exit(0)
 }
 

@@ -236,3 +236,6 @@ export async function prepareStatement(name: string, text: string, values: numbe
     client.release()
   }
 }
+
+// Export pool for use in other modules
+export { pool }
