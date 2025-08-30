@@ -1,5 +1,4 @@
 import { ref, computed } from 'vue'
-import { useGrpcClient } from './useGrpcClient'
 import type { WorkflowStep, WorkflowStatus } from '@/types/workflow'
 
 export interface CreateWorkflowOptions {
@@ -16,6 +15,8 @@ export interface Workflow {
   projectType: string
   steps: WorkflowStep[]
   status: string
+  createdAt?: Date
+  updatedAt?: Date
 }
 
 export interface WorkflowUpdate {
@@ -28,14 +29,19 @@ export interface WorkflowUpdate {
 }
 
 export function useWorkflow() {
-  const { getClient } = useGrpcClient()
+  const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8080'
   
-  const activeWorkflows = ref<Map<string, Workflow>>(new Map())
+  const activeWorkflows = ref<Workflow[]>([])
   const workflowStatuses = ref<Map<string, WorkflowStatus>>(new Map())
   const workflowUpdates = ref<WorkflowUpdate[]>([])
   const isCreating = ref(false)
   const isExecuting = ref(false)
   const error = ref<string | null>(null)
+  
+  // Helper to get auth token
+  function getAuthToken(): string | null {
+    return localStorage.getItem('accessToken')
+  }
   
   // Create a new workflow
   async function createWorkflow(options: CreateWorkflowOptions): Promise<Workflow | null> {
@@ -43,244 +49,359 @@ export function useWorkflow() {
     error.value = null
     
     try {
-      const client = await getClient()
-      
-      // For now, we'll simulate the workflow creation
-      // In production, this would call the gRPC WorkflowService
-      const workflow: Workflow = {
-        workflowId: `wf_${Date.now()}`,
-        name: 'New Workflow',
-        description: options.userInput,
-        projectType: 'web_application',
-        steps: [
-          {
-            id: 'step1',
-            phase: 'brainstorming',
-            name: 'Idea Refinement',
-            description: 'Refine and validate the project idea',
-            agents: ['idea_generator', 'architect'],
-            status: 'pending'
-          },
-          {
-            id: 'step2',
-            phase: 'requirements',
-            name: 'Requirements Gathering',
-            description: 'Gather and document detailed requirements',
-            agents: ['architect', 'technical_writer'],
-            status: 'pending'
-          },
-          {
-            id: 'step3',
-            phase: 'architecture',
-            name: 'System Design',
-            description: 'Design system architecture',
-            agents: ['architect'],
-            status: 'pending'
-          },
-          {
-            id: 'step4',
-            phase: 'development',
-            name: 'Development',
-            description: 'Implement the solution',
-            agents: ['python_backend', 'frontend_vue'],
-            status: 'pending'
-          },
-          {
-            id: 'step5',
-            phase: 'testing',
-            name: 'Testing',
-            description: 'Test and validate',
-            agents: ['qa_engineer'],
-            status: 'pending'
-          }
-        ],
-        status: 'created'
+      const token = getAuthToken()
+      if (!token) {
+        throw new Error('Not authenticated')
       }
       
-      activeWorkflows.value.set(workflow.workflowId, workflow)
+      const response = await fetch(`${API_BASE}/api/v1/workflows`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          name: 'New Workflow',
+          description: options.userInput,
+          userInput: options.userInput,
+          projectType: options.options?.projectType || 'web_application'
+        })
+      })
       
-      return workflow
+      if (!response.ok) {
+        throw new Error('Failed to create workflow')
+      }
+      
+      const data = await response.json()
+      
+      if (data.success && data.workflow) {
+        const workflow: Workflow = {
+          workflowId: data.workflow.id,
+          name: data.workflow.name,
+          description: data.workflow.description,
+          projectType: data.workflow.projectType,
+          steps: data.workflow.steps,
+          status: data.workflow.status,
+          createdAt: data.workflow.createdAt,
+          updatedAt: data.workflow.updatedAt
+        }
+        
+        activeWorkflows.value.push(workflow)
+        workflowStatuses.value.set(workflow.workflowId, workflow.status as WorkflowStatus)
+        
+        // Add initial update
+        workflowUpdates.value.push({
+          updateId: `update_${Date.now()}`,
+          workflowId: workflow.workflowId,
+          type: 'workflow_created',
+          message: 'Workflow created successfully',
+          timestamp: new Date()
+        })
+        
+        return workflow
+      }
+      
+      throw new Error('Invalid response from server')
     } catch (err) {
-      console.error('Failed to create workflow:', err)
       error.value = err instanceof Error ? err.message : 'Failed to create workflow'
+      console.error('Error creating workflow:', err)
       return null
     } finally {
       isCreating.value = false
     }
   }
   
-  // Execute a workflow
-  async function executeWorkflow(workflowId: string): Promise<boolean> {
+  // Execute workflow
+  async function executeWorkflow(workflowId: string): Promise<void> {
     isExecuting.value = true
     error.value = null
     
     try {
-      const workflow = activeWorkflows.value.get(workflowId)
-      if (!workflow) {
-        throw new Error('Workflow not found')
+      const token = getAuthToken()
+      if (!token) {
+        throw new Error('Not authenticated')
       }
       
-      // Simulate workflow execution
-      workflow.status = 'in_progress'
+      const response = await fetch(`${API_BASE}/api/v1/workflows/${workflowId}/execute`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
       
-      // Simulate step execution
-      for (const step of workflow.steps) {
-        step.status = 'in_progress'
+      if (!response.ok) {
+        throw new Error('Failed to execute workflow')
+      }
+      
+      const data = await response.json()
+      
+      if (data.success) {
+        // Update workflow status
+        const workflow = activeWorkflows.value.find(w => w.workflowId === workflowId)
+        if (workflow) {
+          workflow.status = 'in_progress'
+          workflowStatuses.value.set(workflowId, 'in_progress')
+        }
         
         // Add update
-        const update: WorkflowUpdate = {
+        workflowUpdates.value.push({
           updateId: `update_${Date.now()}`,
           workflowId,
-          type: 'step_started',
-          message: `Starting ${step.name}`,
-          data: { stepId: step.id },
+          type: 'workflow_started',
+          message: 'Workflow execution started',
           timestamp: new Date()
-        }
-        workflowUpdates.value.push(update)
-        
-        // Simulate processing time
-        await new Promise(resolve => setTimeout(resolve, 1000))
-        
-        step.status = 'completed'
-        
-        // Add completion update
-        const completeUpdate: WorkflowUpdate = {
-          updateId: `update_${Date.now()}`,
-          workflowId,
-          type: 'step_completed',
-          message: `Completed ${step.name}`,
-          data: { stepId: step.id },
-          timestamp: new Date()
-        }
-        workflowUpdates.value.push(completeUpdate)
+        })
       }
-      
-      workflow.status = 'completed'
-      
-      return true
     } catch (err) {
-      console.error('Failed to execute workflow:', err)
       error.value = err instanceof Error ? err.message : 'Failed to execute workflow'
-      return false
+      console.error('Error executing workflow:', err)
     } finally {
       isExecuting.value = false
     }
   }
   
-  // Get workflow status
-  async function getWorkflowStatus(workflowId: string): Promise<WorkflowStatus | null> {
-    try {
-      const workflow = activeWorkflows.value.get(workflowId)
-      if (!workflow) {
-        return null
-      }
-      
-      const completedSteps = workflow.steps.filter(s => s.status === 'completed').length
-      const totalSteps = workflow.steps.length
-      const currentStep = workflow.steps.find(s => s.status === 'in_progress')
-      
-      const status: WorkflowStatus = {
-        workflowId,
-        name: workflow.name,
-        progress: `${completedSteps}/${totalSteps}`,
-        percentage: (completedSteps / totalSteps) * 100,
-        currentPhase: currentStep?.phase || null,
-        agents: {},
-        steps: workflow.steps
-      }
-      
-      workflowStatuses.value.set(workflowId, status)
-      
-      return status
-    } catch (err) {
-      console.error('Failed to get workflow status:', err)
-      return null
-    }
-  }
-  
   // Pause workflow
-  async function pauseWorkflow(workflowId: string): Promise<boolean> {
+  async function pauseWorkflow(workflowId: string): Promise<void> {
     try {
-      const workflow = activeWorkflows.value.get(workflowId)
+      const token = getAuthToken()
+      if (!token) {
+        throw new Error('Not authenticated')
+      }
+      
+      const response = await fetch(`${API_BASE}/api/v1/workflows/${workflowId}/pause`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
+      
+      if (!response.ok) {
+        throw new Error('Failed to pause workflow')
+      }
+      
+      // Update workflow status
+      const workflow = activeWorkflows.value.find(w => w.workflowId === workflowId)
       if (workflow) {
         workflow.status = 'paused'
-        return true
+        workflowStatuses.value.set(workflowId, 'paused')
       }
-      return false
+      
+      // Add update
+      workflowUpdates.value.push({
+        updateId: `update_${Date.now()}`,
+        workflowId,
+        type: 'workflow_paused',
+        message: 'Workflow paused',
+        timestamp: new Date()
+      })
     } catch (err) {
-      console.error('Failed to pause workflow:', err)
-      return false
+      error.value = err instanceof Error ? err.message : 'Failed to pause workflow'
+      console.error('Error pausing workflow:', err)
     }
   }
   
   // Resume workflow
-  async function resumeWorkflow(workflowId: string): Promise<boolean> {
+  async function resumeWorkflow(workflowId: string): Promise<void> {
     try {
-      const workflow = activeWorkflows.value.get(workflowId)
+      const token = getAuthToken()
+      if (!token) {
+        throw new Error('Not authenticated')
+      }
+      
+      const response = await fetch(`${API_BASE}/api/v1/workflows/${workflowId}/resume`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
+      
+      if (!response.ok) {
+        throw new Error('Failed to resume workflow')
+      }
+      
+      // Update workflow status
+      const workflow = activeWorkflows.value.find(w => w.workflowId === workflowId)
       if (workflow) {
         workflow.status = 'in_progress'
-        return true
+        workflowStatuses.value.set(workflowId, 'in_progress')
       }
-      return false
+      
+      // Add update
+      workflowUpdates.value.push({
+        updateId: `update_${Date.now()}`,
+        workflowId,
+        type: 'workflow_resumed',
+        message: 'Workflow resumed',
+        timestamp: new Date()
+      })
     } catch (err) {
-      console.error('Failed to resume workflow:', err)
-      return false
+      error.value = err instanceof Error ? err.message : 'Failed to resume workflow'
+      console.error('Error resuming workflow:', err)
     }
   }
   
   // Cancel workflow
-  async function cancelWorkflow(workflowId: string): Promise<boolean> {
+  async function cancelWorkflow(workflowId: string): Promise<void> {
     try {
-      const workflow = activeWorkflows.value.get(workflowId)
+      const token = getAuthToken()
+      if (!token) {
+        throw new Error('Not authenticated')
+      }
+      
+      const response = await fetch(`${API_BASE}/api/v1/workflows/${workflowId}/cancel`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
+      
+      if (!response.ok) {
+        throw new Error('Failed to cancel workflow')
+      }
+      
+      // Update workflow status
+      const workflow = activeWorkflows.value.find(w => w.workflowId === workflowId)
       if (workflow) {
         workflow.status = 'cancelled'
-        activeWorkflows.value.delete(workflowId)
-        workflowStatuses.value.delete(workflowId)
-        return true
+        workflowStatuses.value.set(workflowId, 'cancelled')
       }
-      return false
+      
+      // Add update
+      workflowUpdates.value.push({
+        updateId: `update_${Date.now()}`,
+        workflowId,
+        type: 'workflow_cancelled',
+        message: 'Workflow cancelled',
+        timestamp: new Date()
+      })
     } catch (err) {
-      console.error('Failed to cancel workflow:', err)
-      return false
+      error.value = err instanceof Error ? err.message : 'Failed to cancel workflow'
+      console.error('Error cancelling workflow:', err)
     }
   }
   
-  // Stream workflow updates
-  function streamWorkflowUpdates(workflowId: string, callback: (update: WorkflowUpdate) => void) {
-    // In production, this would set up a gRPC stream
-    // For now, we'll use a simple interval
-    const interval = setInterval(() => {
-      const updates = workflowUpdates.value.filter(u => u.workflowId === workflowId)
-      if (updates.length > 0) {
-        const latestUpdate = updates[updates.length - 1]
-        callback(latestUpdate)
-      }
-    }, 1000)
+  // Stream workflow updates using Server-Sent Events
+  function streamWorkflowUpdates(workflowId: string): () => void {
+    const token = getAuthToken()
+    if (!token) {
+      console.error('Not authenticated')
+      return () => {}
+    }
     
-    return () => clearInterval(interval)
+    const eventSource = new EventSource(
+      `${API_BASE}/api/v1/workflows/${workflowId}/stream?token=${encodeURIComponent(token)}`
+    )
+    
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data)
+        
+        if (data.type === 'update' && data.workflow) {
+          // Update workflow in active list
+          const index = activeWorkflows.value.findIndex(w => w.workflowId === workflowId)
+          if (index >= 0) {
+            activeWorkflows.value[index] = {
+              workflowId: data.workflow.id,
+              name: data.workflow.name,
+              description: data.workflow.description,
+              projectType: data.workflow.projectType,
+              steps: data.workflow.steps,
+              status: data.workflow.status
+            }
+          }
+          
+          // Update status map
+          workflowStatuses.value.set(workflowId, data.workflow.status)
+          
+          // Add update to history
+          workflowUpdates.value.push({
+            updateId: `update_${Date.now()}`,
+            workflowId,
+            type: 'workflow_update',
+            message: `Workflow status: ${data.workflow.status}`,
+            data: data.workflow,
+            timestamp: new Date()
+          })
+        }
+      } catch (error) {
+        console.error('Error parsing workflow update:', error)
+      }
+    }
+    
+    eventSource.onerror = (error) => {
+      console.error('EventSource error:', error)
+      eventSource.close()
+    }
+    
+    // Return cleanup function
+    return () => {
+      eventSource.close()
+    }
   }
   
-  // Computed properties
-  const activeWorkflowsList = computed(() => Array.from(activeWorkflows.value.values()))
-  const hasActiveWorkflows = computed(() => activeWorkflows.value.size > 0)
+  // Load user workflows
+  async function loadWorkflows(): Promise<void> {
+    try {
+      const token = getAuthToken()
+      if (!token) {
+        throw new Error('Not authenticated')
+      }
+      
+      const response = await fetch(`${API_BASE}/api/v1/workflows`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      })
+      
+      if (!response.ok) {
+        throw new Error('Failed to load workflows')
+      }
+      
+      const data = await response.json()
+      
+      if (data.success && data.workflows) {
+        activeWorkflows.value = data.workflows.map((w: any) => ({
+          workflowId: w.id,
+          name: w.name,
+          description: w.description,
+          projectType: w.projectType,
+          steps: w.steps,
+          status: w.status,
+          createdAt: w.createdAt,
+          updatedAt: w.updatedAt
+        }))
+        
+        // Update status map
+        activeWorkflows.value.forEach(w => {
+          workflowStatuses.value.set(w.workflowId, w.status as WorkflowStatus)
+        })
+      }
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : 'Failed to load workflows'
+      console.error('Error loading workflows:', err)
+    }
+  }
   
   return {
     // State
-    activeWorkflows: activeWorkflowsList,
-    workflowStatuses,
-    workflowUpdates,
-    isCreating,
-    isExecuting,
-    error,
-    hasActiveWorkflows,
+    activeWorkflows: computed(() => activeWorkflows.value),
+    workflowStatuses: computed(() => workflowStatuses.value),
+    workflowUpdates: computed(() => workflowUpdates.value),
+    isCreating: computed(() => isCreating.value),
+    isExecuting: computed(() => isExecuting.value),
+    error: computed(() => error.value),
     
-    // Methods
+    // Actions
     createWorkflow,
     executeWorkflow,
-    getWorkflowStatus,
     pauseWorkflow,
     resumeWorkflow,
     cancelWorkflow,
-    streamWorkflowUpdates
+    streamWorkflowUpdates,
+    loadWorkflows
   }
 }

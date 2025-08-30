@@ -24,9 +24,8 @@ import ChartWidget from './ChartWidget.vue';
 import TableWidget from './TableWidget.vue';
 import DiagramWidget from './DiagramWidget.vue';
 import NotificationWidget from './NotificationWidget.vue';
-
-// Existing imports
 import CodeEditorWidget from './CodeEditorWidget.vue';
+import FileUploadWidget from './FileUploadWidget.vue';
 
 interface Props {
   widget: Widget;
@@ -49,7 +48,7 @@ const widgetComponents = {
   [WidgetType.CODE_EDITOR]: CodeEditorWidget,
   [WidgetType.DIAGRAM]: DiagramWidget,
   [WidgetType.NOTIFICATION]: NotificationWidget,
-  // Add more widget types as they are implemented
+  [WidgetType.FILE_UPLOAD]: FileUploadWidget,
 };
 
 const getWidgetComponent = (type: WidgetType) => {

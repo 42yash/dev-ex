@@ -11,7 +11,11 @@
 
 <script setup lang="ts">
 import { ref, onMounted, watch, onUnmounted } from 'vue';
+import { Chart, registerables } from 'chart.js';
 import type { ChartWidget } from '@/types/widget';
+
+// Register Chart.js components
+Chart.register(...registerables);
 
 interface Props {
   widget: ChartWidget;
@@ -19,63 +23,99 @@ interface Props {
 
 const props = defineProps<Props>();
 const chartCanvas = ref<HTMLCanvasElement>();
-let chartInstance: any = null;
+let chartInstance: Chart | null = null;
 
-// Simple chart rendering (placeholder - would use Chart.js in production)
+// Render chart using Chart.js
 const renderChart = () => {
   if (!chartCanvas.value) return;
   
-  const ctx = chartCanvas.value.getContext('2d');
-  if (!ctx) return;
-  
-  // Clear canvas
-  ctx.clearRect(0, 0, chartCanvas.value.width, chartCanvas.value.height);
-  
-  // Set canvas size
-  chartCanvas.value.width = chartCanvas.value.offsetWidth;
-  chartCanvas.value.height = 300;
-  
-  // Simple bar chart rendering as placeholder
-  if (props.widget.chartType === 'bar') {
-    const data = props.widget.data.datasets[0].data;
-    const labels = props.widget.data.labels;
-    const maxValue = Math.max(...data);
-    const barWidth = chartCanvas.value.width / (data.length * 2);
-    const chartHeight = chartCanvas.value.height - 40;
-    
-    // Draw bars
-    data.forEach((value, index) => {
-      const barHeight = (value / maxValue) * chartHeight;
-      const x = (index * 2 + 0.5) * barWidth;
-      const y = chartCanvas.value!.height - barHeight - 20;
-      
-      ctx.fillStyle = '#3b82f6';
-      ctx.fillRect(x, y, barWidth, barHeight);
-      
-      // Draw label
-      ctx.fillStyle = '#666';
-      ctx.font = '12px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText(labels[index], x + barWidth / 2, chartCanvas.value!.height - 5);
-    });
+  // Destroy existing chart instance
+  if (chartInstance) {
+    chartInstance.destroy();
   }
   
-  // Note: In production, integrate Chart.js for full chart functionality
+  // Create new chart configuration
+  const chartConfig: any = {
+    type: props.widget.chartType || 'bar',
+    data: {
+      labels: props.widget.data.labels,
+      datasets: props.widget.data.datasets.map(dataset => ({
+        ...dataset,
+        backgroundColor: dataset.backgroundColor || [
+          'rgba(59, 130, 246, 0.8)',
+          'rgba(16, 185, 129, 0.8)',
+          'rgba(251, 146, 60, 0.8)',
+          'rgba(147, 51, 234, 0.8)',
+          'rgba(236, 72, 153, 0.8)',
+          'rgba(250, 204, 21, 0.8)'
+        ],
+        borderColor: dataset.borderColor || [
+          'rgba(59, 130, 246, 1)',
+          'rgba(16, 185, 129, 1)',
+          'rgba(251, 146, 60, 1)',
+          'rgba(147, 51, 234, 1)',
+          'rgba(236, 72, 153, 1)',
+          'rgba(250, 204, 21, 1)'
+        ],
+        borderWidth: dataset.borderWidth || 1
+      }))
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          display: props.widget.options?.showLegend !== false,
+          position: props.widget.options?.legendPosition || 'top'
+        },
+        title: {
+          display: !!props.widget.options?.chartTitle,
+          text: props.widget.options?.chartTitle
+        },
+        tooltip: {
+          enabled: props.widget.options?.showTooltip !== false
+        }
+      },
+      scales: props.widget.chartType !== 'pie' && props.widget.chartType !== 'doughnut' ? {
+        y: {
+          beginAtZero: true,
+          grid: {
+            display: props.widget.options?.showGrid !== false
+          }
+        },
+        x: {
+          grid: {
+            display: props.widget.options?.showGrid !== false
+          }
+        }
+      } : undefined,
+      ...props.widget.options
+    }
+  };
+  
+  // Create new chart instance
+  chartInstance = new Chart(chartCanvas.value, chartConfig);
 };
 
 onMounted(() => {
   renderChart();
-  window.addEventListener('resize', renderChart);
 });
 
 onUnmounted(() => {
-  window.removeEventListener('resize', renderChart);
   if (chartInstance) {
-    // chartInstance.destroy();
+    chartInstance.destroy();
   }
 });
 
 watch(() => props.widget.data, () => {
+  renderChart();
+}, { deep: true });
+
+watch(() => props.widget.chartType, () => {
+  renderChart();
+});
+
+watch(() => props.widget.options, () => {
   renderChart();
 }, { deep: true });
 </script>

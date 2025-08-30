@@ -85,8 +85,11 @@
               
               <!-- Widget-enhanced message -->
               <div v-else class="message-with-widgets">
-                <div v-if="message.text" class="message-text">
-                  <span v-html="formatInlineText(message.text)"></span>
+                <div v-if="message.content" class="message-text">
+                  <template v-for="(part, index) in parseMessage(message.content)" :key="`widget-${index}`">
+                    <CodeBlock v-if="part.type === 'code'" :code="part.content" :language="part.language" />
+                    <span v-else v-html="formatInlineText(part.content)"></span>
+                  </template>
                 </div>
                 <div class="message-widgets">
                   <WidgetRenderer
