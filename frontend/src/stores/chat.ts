@@ -163,13 +163,28 @@ export const useChatStore = defineStore('chat', () => {
     sessionMessages.push(userMessage)
     messages.value.set(sessionId, sessionMessages)
     
+    // Prepare conversation history (last 10 messages for context)
+    const conversationHistory = sessionMessages
+      .slice(-10)
+      .filter(m => m.id !== userMessage.id) // Exclude the current temp message
+      .map(m => ({
+        role: m.sender === 'user' ? 'user' : 'assistant',
+        content: m.content,
+        timestamp: m.timestamp
+      }))
+    
     try {
       isLoading.value = true
       error.value = null
       
       const response = await chatApi.sendMessage({
         sessionId,
-        message: content
+        message: content,
+        conversationHistory,
+        options: {
+          includeContext: true,
+          maxContextMessages: 10
+        }
       })
       
       // Add AI response

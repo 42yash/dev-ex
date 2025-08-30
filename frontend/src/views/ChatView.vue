@@ -74,12 +74,44 @@
                 @delete-message="handleDeleteMessage"
                 @regenerate-response="handleRegenerateResponse"
               />
-              <div class="message-text">
-                <template v-for="(part, index) in parseMessage(message.content)" :key="index">
+              
+              <!-- Message content (always show text if available) -->
+              <div class="message-text" v-if="message.content || message.text">
+                <template v-for="(part, index) in parseMessage(message.content || message.text || '')" :key="index">
                   <CodeBlock v-if="part.type === 'code'" :code="part.content" :language="part.language" />
                   <span v-else v-html="formatInlineText(part.content)"></span>
                 </template>
               </div>
+              
+              <!-- Widgets (temporarily disabled - component needs to be created) -->
+              <!-- <div v-if="message.widgets && message.widgets.length > 0" class="message-widgets">
+                <WidgetRenderer
+                  v-for="widget in message.widgets"
+                  :key="widget.id"
+                  :widget="widget"
+                  @change="handleWidgetChange"
+                  @action="handleWidgetAction"
+                />
+              </div> -->
+              
+              <!-- Widget action buttons (temporarily disabled) -->
+              <!-- <div v-if="message.widgetResponse?.submitButton" class="widget-actions">
+                <button 
+                  @click="submitWidgetForm(message.id)"
+                  :disabled="!widgetStore.isFormValid"
+                  class="btn-submit"
+                >
+                  {{ message.widgetResponse.submitButton.label }}
+                </button>
+                <button 
+                  v-if="message.widgetResponse.cancelButton?.visible"
+                  @click="cancelWidgetForm(message.id)"
+                  class="btn-cancel"
+                >
+                  {{ message.widgetResponse.cancelButton.label }}
+                </button>
+              </div> -->
+              
               <div class="message-time">{{ formatTime(message.timestamp) }}</div>
             </div>
           </div>
@@ -129,13 +161,16 @@
 import { ref, computed, onMounted, nextTick } from 'vue'
 import { useChatStore } from '@/stores/chat'
 import { useAuthStore } from '@/stores/auth'
+// import { useWidgetStore } from '@/stores/widgets'
 import { useRouter } from 'vue-router'
 import MessageActions from '@/components/MessageActions.vue'
 import CodeBlock from '@/components/CodeBlock.vue'
+// import WidgetRenderer from '@/components/widgets/WidgetRenderer.vue'
 
 const router = useRouter()
 const chatStore = useChatStore()
 const authStore = useAuthStore()
+// const widgetStore = useWidgetStore()
 
 const messagesContainer = ref<HTMLElement>()
 const inputMessage = ref('')
@@ -448,6 +483,39 @@ async function handleRegenerateResponse(messageId: string) {
     }
   }
 }
+
+// Widget handling functions (temporarily disabled - widget store needs to be created)
+// function handleWidgetChange(event: any) {
+//   console.log('Widget changed:', event)
+//   widgetStore.handleWidgetEvent(event)
+// }
+
+// function handleWidgetAction(event: any) {
+//   console.log('Widget action:', event)
+//   widgetStore.handleWidgetEvent(event)
+// }
+
+// async function submitWidgetForm(messageId: string) {
+//   if (!widgetStore.isFormValid) {
+//     console.warn('Form is not valid')
+//     return
+//   }
+  
+//   // Get form data and send as a message
+//   const formData = widgetStore.formData
+//   const formMessage = `Form submitted: ${JSON.stringify(formData, null, 2)}`
+  
+//   // Clear widgets after submission
+//   widgetStore.clearWidgets()
+  
+//   // Send the form data as a new message
+//   await sendMessage(formMessage)
+// }
+
+// function cancelWidgetForm(messageId: string) {
+//   widgetStore.clearWidgets()
+//   console.log('Widget form cancelled')
+// }
 </script>
 
 <style scoped lang="scss">
@@ -701,7 +769,62 @@ async function handleRegenerateResponse(messageId: string) {
 
 .message-text {
   line-height: 1.5;
+  margin-bottom: 1rem;
+}
 
+.message-widgets {
+  margin: 1rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.widget-actions {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+    
+  
+  .btn-submit,
+  .btn-cancel {
+    padding: 0.625rem 1.25rem;
+    border-radius: var(--radius);
+    font-weight: 500;
+    transition: all var(--transition-fast);
+    cursor: pointer;
+    border: none;
+    font-size: 0.875rem;
+  }
+  
+  .btn-submit {
+    background: var(--accent);
+    color: var(--bg-primary);
+    
+    &:hover:not(:disabled) {
+      background: var(--accent-bright);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(0, 255, 136, 0.3);
+    }
+    
+    &:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+  }
+  
+  .btn-cancel {
+    background: transparent;
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+    
+    &:hover {
+      background: rgba(255, 255, 255, 0.05);
+      border-color: var(--text-secondary);
+    }
+  }
+}
+
+.message-text {
   :deep(.inline-code) {
     background: rgba(0, 255, 136, 0.1);
     color: var(--accent);

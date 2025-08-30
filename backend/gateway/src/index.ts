@@ -124,6 +124,12 @@ async function start() {
     await server.register(healthRoutes, { prefix: '/health' })
     await server.register(authRoutes, { prefix: '/api/v1/auth' })
     await server.register(chatRoutes, { prefix: '/api/v1/chat' })
+    
+    // Import and register search routes
+    const { searchRoutes } = await import('./routes/search.js')
+    await server.register(searchRoutes, { prefix: '/api/v1/search' })
+    
+    // Note: Additional routes (upload, settings, workflow, etc.) can be added when their dependencies are installed
 
     // Start server
     await server.listen({ 

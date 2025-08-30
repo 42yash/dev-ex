@@ -94,7 +94,12 @@ export const chatApi = {
   getSessions: (limit: number = 20, offset: number = 0) =>
     apiClient.get<any>(`/api/v1/chat/sessions?limit=${limit}&offset=${offset}`),
   
-  sendMessage: (data: { sessionId?: string; message: string; options?: any }) =>
+  sendMessage: (data: { 
+    sessionId?: string; 
+    message: string; 
+    conversationHistory?: Array<{role: string; content: string; timestamp: string | Date}>;
+    options?: any 
+  }) =>
     apiClient.post<any>('/api/v1/chat/message', data),
   
   getHistory: (sessionId: string, limit: number = 50, offset: number = 0) =>

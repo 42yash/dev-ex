@@ -336,22 +336,40 @@ class AgentManager:
         session_id: str,
         user_id: str,
         message: str,
+        conversation_history: Optional[List[Dict[str, str]]] = None,
         options: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """Process a chat message through the appropriate agent"""
         
-        # Create context
+        # Build conversation context from history
+        conversation_context = ""
+        if conversation_history:
+            for msg in conversation_history[-10:]:  # Use last 10 messages for context
+                role = msg.get('role', 'user')
+                content = msg.get('content', '')
+                conversation_context += f"{role.capitalize()}: {content}\n"
+        
+        # Create context with conversation history
         context = AgentContext(
             session_id=session_id,
             user_id=user_id,
-            variables=options or {}
+            variables={
+                **(options or {}),
+                'conversation_history': conversation_history or [],
+                'conversation_context': conversation_context
+            }
         )
         
         # Get or create conversation agent
         agent = await self.create_conversation_agent(session_id, user_id)
         
-        # Execute agent
-        result = await self.execute_agent(agent.name, message, context)
+        # Build the full message with context
+        full_message = message
+        if conversation_context:
+            full_message = f"Previous conversation:\n{conversation_context}\n\nCurrent message: {message}"
+        
+        # Execute agent with full context
+        result = await self.execute_agent(agent.name, full_message, context)
         
         if result.success:
             # Extract the response text from the structured output

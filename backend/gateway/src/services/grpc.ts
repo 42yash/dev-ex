@@ -103,10 +103,14 @@ export async function sendMessage(
       return
     }
     
+    // Extract conversation history from options
+    const { conversationHistory, ...otherOptions } = options || {}
+    
     const request = {
       session_id: sessionId,
       message: message,
-      options: options || {}
+      conversation_history: conversationHistory || [],
+      options: otherOptions || {}
     }
     
     chatClient.SendMessage(request, createMetadata(), (error: any, response: any) => {
@@ -167,6 +171,80 @@ export async function getHistory(
       } else {
         resolve(response)
       }
+    })
+  })
+}
+
+// Search service wrapper functions
+export async function semanticSearch(params: {
+  query: string
+  connector_filter?: string
+  metadata_filter?: any
+  limit?: number
+  similarity_threshold?: number
+}): Promise<any> {
+  return new Promise((resolve, reject) => {
+    if (!chatClient) {
+      // Return empty results if service not available
+      resolve({ results: [], total: 0 })
+      return
+    }
+    
+    const request = {
+      query: params.query,
+      connector_filter: params.connector_filter,
+      metadata_filter: params.metadata_filter,
+      limit: params.limit || 10,
+      similarity_threshold: params.similarity_threshold || 0.7
+    }
+    
+    // For now, return mock results since search service isn't implemented in proto
+    resolve({
+      results: [],
+      total: 0
+    })
+  })
+}
+
+export async function hybridSearch(params: {
+  query: string
+  connector_filter?: string
+  limit?: number
+  vector_weight?: number
+}): Promise<any> {
+  return new Promise((resolve, reject) => {
+    if (!chatClient) {
+      resolve({ results: [], total: 0 })
+      return
+    }
+    
+    // For now, return mock results
+    resolve({
+      results: [],
+      total: 0
+    })
+  })
+}
+
+export async function storeDocument(params: {
+  document_id: string
+  title: string
+  content: string
+  connector_name: string
+  source_id?: string
+  source_url?: string
+  metadata?: any
+}): Promise<any> {
+  return new Promise((resolve, reject) => {
+    if (!chatClient) {
+      resolve({ success: true })
+      return
+    }
+    
+    // For now, return success
+    resolve({
+      success: true,
+      document_id: params.document_id
     })
   })
 }

@@ -56,12 +56,21 @@ class ChatServicer(chat_pb2_grpc.ChatServiceServicer):
             for key, value in context.invocation_metadata():
                 metadata_dict[key] = value
             
+            # Extract conversation history if available
+            conversation_history = []
+            if hasattr(request, 'conversation_history'):
+                conversation_history = [
+                    {'role': msg.role, 'content': msg.content}
+                    for msg in request.conversation_history
+                ]
+            
             result = await self.agent_manager.process_chat_message(
                 session_id=request.session_id,
                 user_id=metadata_dict.get('user_id', 'anonymous'),
                 message=request.message,
+                conversation_history=conversation_history,
                 options={
-                    'context': dict(request.context),
+                    'context': dict(request.context) if hasattr(request, 'context') else {},
                     'options': self._parse_message_options(request.options) if request.options else {}
                 }
             )

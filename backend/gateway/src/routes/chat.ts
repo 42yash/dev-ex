@@ -10,11 +10,18 @@ import { broadcastMessage } from '../services/websocket.js'
 const sendMessageSchema = z.object({
   sessionId: z.string().uuid().optional(),
   message: z.string().min(1).max(10000),
+  conversationHistory: z.array(z.object({
+    role: z.enum(['user', 'assistant']),
+    content: z.string(),
+    timestamp: z.union([z.string(), z.date()])
+  })).optional(),
   options: z.object({
     stream: z.boolean().optional(),
     preferredConnector: z.string().optional(),
     maxTokens: z.number().optional(),
-    temperature: z.number().min(0).max(1).optional()
+    temperature: z.number().min(0).max(1).optional(),
+    includeContext: z.boolean().optional(),
+    maxContextMessages: z.number().optional()
   }).optional()
 })
 
@@ -133,13 +140,25 @@ export const chatRoutes: FastifyPluginAsync = async (fastify) => {
         [sessionId]
       )
       
+      // Store conversation context in Redis if provided
+      if (body.conversationHistory && body.conversationHistory.length > 0) {
+        await setCached(
+          `conversation:${sessionId}`,
+          body.conversationHistory,
+          3600 // 1 hour TTL
+        )
+      }
+      
       // Try to send to AI service
       let aiResponse = null
       try {
         aiResponse = await grpcService.sendMessage(
           sessionId!,
           body.message,
-          body.options
+          {
+            ...body.options,
+            conversationHistory: body.conversationHistory
+          }
         )
         
         // Store AI response in database
