@@ -1,0 +1,167 @@
+name: Test CI
+
+on:
+  push:
+    branches: [ master, main, develop ]
+  pull_request:
+    branches: [ master, main, develop ]
+
+jobs:
+  test-backend-gateway:
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test_db
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+      
+      redis:
+        image: redis:7
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: backend/gateway/package-lock.json
+    
+    - name: Install dependencies
+      working-directory: backend/gateway
+      run: npm ci
+    
+    - name: Run linter
+      working-directory: backend/gateway
+      run: npm run lint --if-present
+    
+    - name: Run type checking
+      working-directory: backend/gateway
+      run: npm run typecheck --if-present
+    
+    - name: Run tests
+      working-directory: backend/gateway
+      env:
+        NODE_ENV: test
+        DATABASE_URL: postgresql://test:test@localhost:5432/test_db
+        REDIS_URL: redis://localhost:6379
+        JWT_SECRET: test-jwt-secret
+        JWT_REFRESH_SECRET: test-refresh-secret
+        SESSION_SECRET: test-session-secret
+      run: npm test -- --coverage
+    
+    - name: Upload coverage
+      uses: codecov/codecov-action@v3
+      with:
+        directory: backend/gateway/coverage
+        flags: gateway
+        name: gateway-coverage
+
+  test-frontend:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: frontend/package-lock.json
+    
+    - name: Install dependencies
+      working-directory: frontend
+      run: npm ci
+    
+    - name: Run linter
+      working-directory: frontend
+      run: npm run lint --if-present
+    
+    - name: Run type checking
+      working-directory: frontend
+      run: npm run type-check --if-present
+    
+    - name: Run tests
+      working-directory: frontend
+      run: npm test --if-present -- --coverage
+    
+    - name: Build application
+      working-directory: frontend
+      run: npm run build
+
+  test-ai-services:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+        cache-dependency-path: backend/ai-services/requirements.txt
+    
+    - name: Install dependencies
+      working-directory: backend/ai-services
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest pytest-cov pytest-asyncio black flake8
+    
+    - name: Run linter
+      working-directory: backend/ai-services
+      run: |
+        black --check src/
+        flake8 src/ --max-line-length=120
+    
+    - name: Run tests
+      working-directory: backend/ai-services
+      run: |
+        pytest tests/ --cov=src --cov-report=xml --cov-report=term
+    
+    - name: Upload coverage
+      uses: codecov/codecov-action@v3
+      with:
+        directory: backend/ai-services
+        flags: ai-services
+        name: ai-services-coverage
+
+  security-scan:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Run Trivy security scan
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+    
+    - name: Upload Trivy results to GitHub Security
+      uses: github/codeql-action/upload-sarif@v2
+      if: always()
+      with:
+        sarif_file: 'trivy-results.sarif'
