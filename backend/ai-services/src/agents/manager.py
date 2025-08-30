@@ -16,7 +16,12 @@ from .base import BaseAgent, AgentContext, AgentResult, AgentType, Conversationa
 from .architect import ArchitectAgent
 from .idea_generator import IdeaGeneratorAgent
 from .technical_writer import TechnicalWriterAgent
+from .agent_pool_maker import AgentPoolMaker
+from .specifications import AgentSpecification
+from .agent_darwin import AgentDarwin
+from .factory import AgentFactory
 from .execution_limiter import ExecutionLimiter, CircuitBreaker
+from .orchestrator import WorkflowOrchestrator
 from ..config import Config
 from ..db.connection import DatabaseManager
 from ..cache.redis_client import RedisCache
@@ -53,6 +58,15 @@ class AgentManager:
         # Limit number of agents to prevent memory issues
         self.max_agents = 50
         
+        # Initialize workflow orchestrator (will be set in initialize)
+        self.workflow_orchestrator = None
+        
+        # Initialize agent factory
+        self.agent_factory = None
+        
+        # Track dynamic agent pools
+        self.dynamic_pools: Dict[str, Dict[str, Any]] = {}
+        
     async def initialize(self):
         """Initialize the agent manager and all agents"""
         logger.info("Initializing Agent Manager...")
@@ -71,11 +85,29 @@ class AgentManager:
         else:
             logger.warning("No Gemini API key configured - agents will run in limited mode")
         
+        # Initialize agent factory
+        self.agent_factory = AgentFactory(config=self.config, model=self.model)
+        logger.info("Initialized Agent Factory")
+        
         # Initialize core agents
         await self._initialize_core_agents()
         
         # Load custom agents from database
         await self._load_custom_agents()
+        
+        # Initialize workflow orchestrator
+        pool_maker = self.get_agent("agent_pool_maker")
+        darwin = self.get_agent("agent_darwin")
+        if pool_maker and darwin:
+            self.workflow_orchestrator = WorkflowOrchestrator(
+                config=self.config,
+                db_manager=self.db_manager,
+                cache=self.cache,
+                agent_pool_maker=pool_maker,
+                agent_darwin=darwin
+            )
+            await self.workflow_orchestrator.initialize()
+            logger.info("Initialized Workflow Orchestrator")
         
         logger.info(f"Initialized {len(self.agents)} agents")
     
@@ -93,6 +125,21 @@ class AgentManager:
         # Agent 2: The Technical Writer
         technical_writer = TechnicalWriterAgent(model=self.model)
         self.register_agent(technical_writer)
+        
+        # Agent Pool Maker (Agent 0) - Master Orchestrator
+        agent_pool_maker = AgentPoolMaker(
+            config=self.config,
+            execution_limiter=self.execution_limiter,
+            model=self.model
+        )
+        self.register_agent(agent_pool_maker)
+        
+        # Agent Darwin - Evolution System
+        agent_darwin = AgentDarwin(
+            config=self.config,
+            execution_limiter=self.execution_limiter
+        )
+        self.register_agent(agent_darwin)
         
         # Basic Chat Agent
         chat_agent = ConversationalAgent(
@@ -129,6 +176,15 @@ class AgentManager:
         try:
             agent_type = AgentType(agent_data['type'])
             
+            # Parse config if it's a string (JSON)
+            config = agent_data.get('config', {})
+            if isinstance(config, str):
+                try:
+                    config = json.loads(config) if config else {}
+                except json.JSONDecodeError:
+                    logger.warning(f"Invalid JSON in config for agent {agent_data['name']}")
+                    config = {}
+            
             # Create appropriate agent based on type
             if agent_type in [AgentType.CREATIVE, AgentType.DOCUMENTATION]:
                 agent = ConversationalAgent(
@@ -136,7 +192,7 @@ class AgentManager:
                     agent_type=agent_type,
                     system_prompt=agent_data['system_prompt'],
                     model=self.model,
-                    config=agent_data.get('config', {})
+                    config=config
                 )
             else:
                 # Default to base conversational agent
@@ -145,7 +201,7 @@ class AgentManager:
                     agent_type=agent_type,
                     system_prompt=agent_data['system_prompt'],
                     model=self.model,
-                    config=agent_data.get('config', {})
+                    config=config
                 )
             
             self.register_agent(agent)
@@ -368,12 +424,34 @@ class AgentManager:
                 except:
                     pass  # Keep original content if not JSON
             
-            return {
-                "content": content,
-                "widgets": [],  # TODO: Implement widget generation
-                "suggested_actions": [],
-                "metadata": result.metadata
-            }
+            # Parse response to generate widgets
+            from ..utils.response_parser import ResponseParser
+            parser = ResponseParser()
+            parsed_response = parser.parse_response(content, context.variables)
+            
+            # Check if this is asking about building something
+            if any(phrase in message.lower() for phrase in ['build', 'create', 'develop', 'make']):
+                # Return structured response with widgets
+                return {
+                    "content": content if content else "I can help you with that! Here's a workflow to get started:",  # Always include content
+                    "widgets": parsed_response.get("widgets", []),
+                    "suggested_actions": [
+                        {
+                            "id": "start_workflow",
+                            "label": "Start Workflow",
+                            "action": "create_workflow"
+                        }
+                    ],
+                    "metadata": parsed_response.get("metadata", {})
+                }
+            else:
+                # Return response with optional widgets
+                return {
+                    "content": content if content else "Here's the information you requested:",  # Always include content
+                    "widgets": parsed_response.get("widgets", []),
+                    "suggested_actions": [],
+                    "metadata": result.metadata
+                }
         else:
             return {
                 "content": "I apologize, but I encountered an error processing your request. Please try again.",
@@ -381,9 +459,41 @@ class AgentManager:
                 "metadata": {}
             }
     
+    async def create_workflow(self, user_input: str, session_id: str, user_id: str, options: Optional[Dict[str, Any]] = None):
+        """Create a workflow from user input"""
+        if not self.workflow_orchestrator:
+            logger.error("Workflow orchestrator not initialized")
+            return None
+        
+        return await self.workflow_orchestrator.create_workflow(
+            user_input=user_input,
+            session_id=session_id,
+            user_id=user_id,
+            options=options
+        )
+    
+    async def execute_workflow(self, workflow_id: str):
+        """Execute a workflow"""
+        if not self.workflow_orchestrator:
+            logger.error("Workflow orchestrator not initialized")
+            return {"error": "Workflow orchestrator not available"}
+        
+        return await self.workflow_orchestrator.execute_workflow(workflow_id)
+    
+    async def get_workflow_status(self, workflow_id: str):
+        """Get workflow status"""
+        if not self.workflow_orchestrator:
+            return {"error": "Workflow orchestrator not available"}
+        
+        return await self.workflow_orchestrator.get_workflow_status(workflow_id)
+    
     async def shutdown(self):
         """Shutdown the agent manager"""
         logger.info("Shutting down Agent Manager...")
+        
+        # Shutdown workflow orchestrator
+        if self.workflow_orchestrator:
+            await self.workflow_orchestrator.shutdown()
         
         # Clean up execution limiter
         self.execution_limiter.cleanup()
@@ -408,3 +518,184 @@ class AgentManager:
                 for name, cb in self.circuit_breakers.items()
             }
         }
+    
+    async def create_dynamic_pool(self, user_input: str, context: AgentContext) -> str:
+        """
+        Create and manage a dynamic agent pool based on user requirements
+        
+        Args:
+            user_input: User's project requirements
+            context: Execution context
+            
+        Returns:
+            Pool ID for tracking
+        """
+        logger.info(f"Creating dynamic agent pool for session {context.session_id}")
+        
+        # Get the agent pool maker
+        pool_maker = self.get_agent("agent_pool_maker")
+        if not pool_maker:
+            raise ValueError("Agent Pool Maker not available")
+        
+        # Create the agent pool specifications
+        pool_result = await pool_maker.create_agent_pool(user_input, context)
+        
+        # Extract agent specifications
+        agent_specs = []
+        for agent_dict in pool_result['agents']:
+            spec = AgentSpecification(
+                agent_id=agent_dict['agent_id'],
+                name=agent_dict['name'],
+                type=AgentType[agent_dict['type'].upper()] if isinstance(agent_dict['type'], str) else agent_dict['type'],
+                technologies=agent_dict.get('technologies', []),
+                responsibilities=agent_dict.get('responsibilities', []),
+                dependencies=agent_dict.get('dependencies', []),
+                tools=agent_dict.get('tools', []),
+                context_requirements=agent_dict.get('context_requirements', {})
+            )
+            agent_specs.append(spec)
+        
+        # Instantiate actual agents
+        instantiated_agents = await pool_maker.instantiate_agents(agent_specs)
+        
+        # Register all agents with the manager
+        for agent in instantiated_agents:
+            self.register_agent(agent)
+        
+        # Generate pool ID
+        pool_id = str(uuid.uuid4())
+        
+        # Store pool information
+        self.dynamic_pools[pool_id] = {
+            'pool_id': pool_id,
+            'created_at': datetime.utcnow(),
+            'user_input': user_input,
+            'agents': [agent.name for agent in instantiated_agents],
+            'agent_specs': agent_specs,
+            'execution_plan': pool_result['execution_plan'],
+            'requirements': pool_result['requirements'],
+            'estimated_time': pool_result.get('estimated_time', 'Unknown'),
+            'status': 'created'
+        }
+        
+        logger.info(f"Created dynamic pool {pool_id} with {len(instantiated_agents)} agents")
+        return pool_id
+    
+    async def execute_dynamic_pool(self, pool_id: str, context: AgentContext) -> Dict[str, Any]:
+        """
+        Execute a dynamic agent pool
+        
+        Args:
+            pool_id: Pool identifier
+            context: Execution context
+            
+        Returns:
+            Execution results
+        """
+        pool = self.dynamic_pools.get(pool_id)
+        if not pool:
+            raise ValueError(f"Pool {pool_id} not found")
+        
+        logger.info(f"Executing dynamic pool {pool_id}")
+        
+        # Update pool status
+        pool['status'] = 'executing'
+        pool['started_at'] = datetime.utcnow()
+        
+        # Get the pool maker to execute
+        pool_maker = self.get_agent("agent_pool_maker")
+        if not pool_maker:
+            raise ValueError("Agent Pool Maker not available")
+        
+        # Execute the pool
+        try:
+            results = await pool_maker.execute_pool(pool['execution_plan'], context)
+            
+            # Update pool status
+            pool['status'] = 'completed' if results['overall_success'] else 'failed'
+            pool['completed_at'] = datetime.utcnow()
+            pool['results'] = results
+            
+            logger.info(f"Pool {pool_id} execution {'succeeded' if results['overall_success'] else 'failed'}")
+            
+            return results
+            
+        except Exception as e:
+            logger.error(f"Pool {pool_id} execution failed: {e}")
+            pool['status'] = 'error'
+            pool['error'] = str(e)
+            raise
+    
+    def get_pool_status(self, pool_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get the status of a dynamic pool
+        
+        Args:
+            pool_id: Pool identifier
+            
+        Returns:
+            Pool status information
+        """
+        pool = self.dynamic_pools.get(pool_id)
+        if not pool:
+            return None
+        
+        return {
+            'pool_id': pool_id,
+            'status': pool['status'],
+            'created_at': pool['created_at'].isoformat() if isinstance(pool['created_at'], datetime) else pool['created_at'],
+            'agents': pool['agents'],
+            'requirements': pool['requirements'],
+            'estimated_time': pool['estimated_time'],
+            'started_at': pool.get('started_at', '').isoformat() if pool.get('started_at') and isinstance(pool.get('started_at'), datetime) else pool.get('started_at'),
+            'completed_at': pool.get('completed_at', '').isoformat() if pool.get('completed_at') and isinstance(pool.get('completed_at'), datetime) else pool.get('completed_at'),
+            'results': pool.get('results', {})
+        }
+    
+    def list_dynamic_pools(self) -> List[Dict[str, Any]]:
+        """
+        List all dynamic pools
+        
+        Returns:
+            List of pool summaries
+        """
+        pools = []
+        for pool_id, pool in self.dynamic_pools.items():
+            pools.append({
+                'pool_id': pool_id,
+                'status': pool['status'],
+                'created_at': pool['created_at'].isoformat() if isinstance(pool['created_at'], datetime) else pool['created_at'],
+                'agent_count': len(pool['agents']),
+                'project_type': pool['requirements'].get('project_type', 'Unknown')
+            })
+        
+        return pools
+    
+    async def cleanup_pool(self, pool_id: str):
+        """
+        Clean up a dynamic pool and free resources
+        
+        Args:
+            pool_id: Pool identifier
+        """
+        pool = self.dynamic_pools.get(pool_id)
+        if not pool:
+            logger.warning(f"Pool {pool_id} not found for cleanup")
+            return
+        
+        logger.info(f"Cleaning up pool {pool_id}")
+        
+        # Get pool maker for cleanup
+        pool_maker = self.get_agent("agent_pool_maker")
+        if pool_maker:
+            pool_maker.cleanup_pool()
+        
+        # Remove agents from registry (optional - they can be reused)
+        # for agent_name in pool['agents']:
+        #     if agent_name in self.agents:
+        #         del self.agents[agent_name]
+        
+        # Remove pool from tracking
+        del self.dynamic_pools[pool_id]
+        
+        logger.info(f"Pool {pool_id} cleaned up")

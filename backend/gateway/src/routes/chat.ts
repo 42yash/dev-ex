@@ -142,6 +142,14 @@ export const chatRoutes: FastifyPluginAsync = async (fastify) => {
           body.options
         )
         
+        // Validate AI response has content
+        if (!aiResponse.content || aiResponse.content.trim() === '') {
+          // Add default content if missing
+          aiResponse.content = aiResponse.widgets && aiResponse.widgets.length > 0
+            ? "Here's the information you requested:"
+            : "I've processed your request. Please see the details below."
+        }
+        
         // Store AI response in database
         const aiMessageResult = await query(
           `INSERT INTO messages (session_id, sender, content, tokens_used, processing_time) 

@@ -1,0 +1,169 @@
+syntax = "proto3";
+
+package devex.api.v1;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/struct.proto";
+import "common.proto";
+
+// Workflow service for managing agentic workflows
+service WorkflowService {
+    // Create a new workflow from user input
+    rpc CreateWorkflow(CreateWorkflowRequest) returns (CreateWorkflowResponse);
+    
+    // Execute a workflow
+    rpc ExecuteWorkflow(ExecuteWorkflowRequest) returns (ExecuteWorkflowResponse);
+    
+    // Get workflow status
+    rpc GetWorkflowStatus(GetWorkflowStatusRequest) returns (GetWorkflowStatusResponse);
+    
+    // List active workflows
+    rpc ListActiveWorkflows(ListActiveWorkflowsRequest) returns (ListActiveWorkflowsResponse);
+    
+    // Pause a running workflow
+    rpc PauseWorkflow(PauseWorkflowRequest) returns (PauseWorkflowResponse);
+    
+    // Resume a paused workflow
+    rpc ResumeWorkflow(ResumeWorkflowRequest) returns (ResumeWorkflowResponse);
+    
+    // Cancel a workflow
+    rpc CancelWorkflow(CancelWorkflowRequest) returns (CancelWorkflowResponse);
+    
+    // Stream workflow updates
+    rpc StreamWorkflowUpdates(StreamWorkflowRequest) returns (stream WorkflowUpdate);
+}
+
+// Create workflow request
+message CreateWorkflowRequest {
+    string user_input = 1;              // User's project description
+    string session_id = 2;              // Session ID
+    string user_id = 3;                 // User ID
+    google.protobuf.Struct options = 4; // Additional options
+}
+
+// Create workflow response
+message CreateWorkflowResponse {
+    string workflow_id = 1;
+    string name = 2;
+    string description = 3;
+    string project_type = 4;
+    repeated WorkflowStep steps = 5;
+    string status = 6;
+}
+
+// Workflow step
+message WorkflowStep {
+    string id = 1;
+    string phase = 2;
+    string name = 3;
+    string description = 4;
+    repeated string agents = 5;
+    string status = 6;
+    google.protobuf.Struct inputs = 7;
+    google.protobuf.Struct outputs = 8;
+}
+
+// Execute workflow request
+message ExecuteWorkflowRequest {
+    string workflow_id = 1;
+}
+
+// Execute workflow response
+message ExecuteWorkflowResponse {
+    string workflow_id = 1;
+    string status = 2;
+    int32 steps_completed = 3;
+    google.protobuf.Struct agent_pool = 4;
+    repeated google.protobuf.Struct results = 5;
+    google.protobuf.Struct metadata = 6;
+}
+
+// Get workflow status request
+message GetWorkflowStatusRequest {
+    string workflow_id = 1;
+}
+
+// Get workflow status response
+message GetWorkflowStatusResponse {
+    string workflow_id = 1;
+    string name = 2;
+    string progress = 3;
+    float percentage = 4;
+    string current_phase = 5;
+    map<string, AgentStatus> agents = 6;
+    repeated WorkflowStep steps = 7;
+}
+
+// Agent status
+message AgentStatus {
+    string name = 1;
+    string state = 2;
+    string status = 3;
+}
+
+// List active workflows request
+message ListActiveWorkflowsRequest {
+    string user_id = 1;
+}
+
+// List active workflows response
+message ListActiveWorkflowsResponse {
+    repeated WorkflowSummary workflows = 1;
+}
+
+// Workflow summary
+message WorkflowSummary {
+    string workflow_id = 1;
+    string name = 2;
+    string project_type = 3;
+    string progress = 4;
+    string current_phase = 5;
+}
+
+// Pause workflow request
+message PauseWorkflowRequest {
+    string workflow_id = 1;
+}
+
+// Pause workflow response
+message PauseWorkflowResponse {
+    string status = 1;
+    string workflow_id = 2;
+}
+
+// Resume workflow request
+message ResumeWorkflowRequest {
+    string workflow_id = 1;
+}
+
+// Resume workflow response
+message ResumeWorkflowResponse {
+    string status = 1;
+    string workflow_id = 2;
+}
+
+// Cancel workflow request
+message CancelWorkflowRequest {
+    string workflow_id = 1;
+}
+
+// Cancel workflow response
+message CancelWorkflowResponse {
+    string status = 1;
+    string workflow_id = 2;
+}
+
+// Stream workflow request
+message StreamWorkflowRequest {
+    string workflow_id = 1;
+}
+
+// Workflow update
+message WorkflowUpdate {
+    string update_id = 1;
+    string workflow_id = 2;
+    string type = 3;  // "step_started", "step_completed", "agent_update", etc.
+    string message = 4;
+    google.protobuf.Struct data = 5;
+    google.protobuf.Timestamp timestamp = 6;
+}

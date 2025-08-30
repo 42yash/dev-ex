@@ -13,7 +13,12 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
-    "test:security": "npm audit && npm run test"
+    "test:security": "npm audit && npm run test",
+    "migrate:up": "tsx scripts/migrate.ts up",
+    "migrate:down": "tsx scripts/migrate.ts down",
+    "migrate:status": "tsx scripts/migrate.ts status",
+    "security:audit": "npm audit --audit-level=moderate",
+    "security:check": "tsx scripts/security-check.ts"
   },
   "dependencies": {
     "@fastify/cors": "^8.5.0",
@@ -31,6 +36,7 @@
     "ioredis": "^5.3.2",
     "isomorphic-dompurify": "^2.26.0",
     "jsonwebtoken": "^9.0.2",
+    "node-cron": "^3.0.3",
     "pg": "^8.11.3",
     "pino": "^8.17.2",
     "pino-pretty": "^10.3.1",

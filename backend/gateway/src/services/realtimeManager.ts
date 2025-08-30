@@ -2,7 +2,7 @@ import { Server as SocketIOServer } from 'socket.io'
 import { EventEmitter } from 'events'
 import { logger } from '../utils/logger.js'
 import { query } from '../db/index.js'
-import { getSession, setSession } from './redis.js'
+import { getSession, setSession } from './redis'
 
 // Real-time event types
 export enum RealtimeEvent {

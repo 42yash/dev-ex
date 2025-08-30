@@ -43,7 +43,7 @@
         <div class="messages-container" ref="messagesContainer">
           <div v-if="messages.length === 0" class="empty-state">
             <h3>Welcome to Dev-Ex</h3>
-            <p>Start a conversation by typing a message below</p>
+            <p class="tagline">What do you wanna build today?</p>
             <div class="suggestions">
               <button
                 v-for="suggestion in suggestions"
@@ -74,12 +74,50 @@
                 @delete-message="handleDeleteMessage"
                 @regenerate-response="handleRegenerateResponse"
               />
-              <div class="message-text">
+              
+              <!-- Regular message text -->
+              <div v-if="!message.widgets || message.widgets.length === 0" class="message-text">
                 <template v-for="(part, index) in parseMessage(message.content)" :key="index">
                   <CodeBlock v-if="part.type === 'code'" :code="part.content" :language="part.language" />
                   <span v-else v-html="formatInlineText(part.content)"></span>
                 </template>
               </div>
+              
+              <!-- Widget-enhanced message -->
+              <div v-else class="message-with-widgets">
+                <div v-if="message.content" class="message-text">
+                  <template v-for="(part, index) in parseMessage(message.content)" :key="`widget-${index}`">
+                    <CodeBlock v-if="part.type === 'code'" :code="part.content" :language="part.language" />
+                    <span v-else v-html="formatInlineText(part.content)"></span>
+                  </template>
+                </div>
+                <div class="message-widgets">
+                  <WidgetRenderer
+                    v-for="widget in message.widgets"
+                    :key="widget.id"
+                    :widget="widget"
+                    @change="handleWidgetChange"
+                    @action="handleWidgetAction"
+                  />
+                </div>
+                <div v-if="message.widgetResponse?.submitButton" class="widget-actions">
+                  <button 
+                    @click="submitWidgetForm(message.id)"
+                    :disabled="!widgetStore.isFormValid"
+                    class="btn-submit"
+                  >
+                    {{ message.widgetResponse.submitButton.label }}
+                  </button>
+                  <button 
+                    v-if="message.widgetResponse.cancelButton?.visible"
+                    @click="cancelWidgetForm(message.id)"
+                    class="btn-cancel"
+                  >
+                    {{ message.widgetResponse.cancelButton.label }}
+                  </button>
+                </div>
+              </div>
+              
               <div class="message-time">{{ formatTime(message.timestamp) }}</div>
             </div>
           </div>
@@ -115,7 +153,10 @@
       </main>
     </div>
 
-    <!-- Floating Settings Button -->
+    <!-- Floating Buttons -->
+    <button @click="showDemoWidgets" class="floating-demo-btn" title="Demo Widgets">
+      🎯
+    </button>
     <button @click="toggleSettings" class="floating-settings-btn" title="Settings">
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <circle cx="12" cy="12" r="3"></circle>
@@ -129,13 +170,18 @@
 import { ref, computed, onMounted, nextTick } from 'vue'
 import { useChatStore } from '@/stores/chat'
 import { useAuthStore } from '@/stores/auth'
+import { useWidgetStore } from '@/stores/widgets'
 import { useRouter } from 'vue-router'
 import MessageActions from '@/components/MessageActions.vue'
 import CodeBlock from '@/components/CodeBlock.vue'
+import WidgetRenderer from '@/components/widgets/WidgetRenderer.vue'
+import { parseAIResponse, generateSampleWidgets } from '@/utils/widgetParser'
+import type { WidgetEvent } from '@/types/widget'
 
 const router = useRouter()
 const chatStore = useChatStore()
 const authStore = useAuthStore()
+const widgetStore = useWidgetStore()
 
 const messagesContainer = ref<HTMLElement>()
 const inputMessage = ref('')
@@ -148,9 +194,9 @@ const currentSession = computed(() => chatStore.currentSession)
 const messages = computed(() => chatStore.currentMessages)
 
 const suggestions = [
-  "How do I deploy a static website to AWS?",
-  "Help me design a microservices architecture",
-  "What's the best way to implement authentication?"
+  "Build a web application with React and Node.js",
+  "Create a REST API with authentication",
+  "Design a microservices architecture"
 ]
 
 onMounted(async () => {
@@ -288,23 +334,23 @@ function formatInlineText(content: string): string {
     if (line.startsWith('### ')) {
       // Close all open lists
       while (listStack.length > 0) {
-        result += `</${listStack.pop()!.type}>`
+        result += '</' + listStack.pop()!.type + '>'
       }
-      result += `<h3>${formatInlineMarkdown(line.slice(4))}</h3>`
+      result += '<h3>' + formatInlineMarkdown(line.slice(4)) + '</h3>'
       return
     } else if (line.startsWith('## ')) {
       // Close all open lists
       while (listStack.length > 0) {
-        result += `</${listStack.pop()!.type}>`
+        result += '</' + listStack.pop()!.type + '>'
       }
-      result += `<h2>${formatInlineMarkdown(line.slice(3))}</h2>`
+      result += '<h2>' + formatInlineMarkdown(line.slice(3)) + '</h2>'
       return
     } else if (line.startsWith('# ')) {
       // Close all open lists
       while (listStack.length > 0) {
-        result += `</${listStack.pop()!.type}>`
+        result += '</' + listStack.pop()!.type + '>'
       }
-      result += `<h1>${formatInlineMarkdown(line.slice(2))}</h1>`
+      result += '<h1>' + formatInlineMarkdown(line.slice(2)) + '</h1>'
       return
     }
     
@@ -324,30 +370,30 @@ function formatInlineText(content: string): string {
       
       // Close lists that are deeper than current indent
       while (listStack.length > 0 && listStack[listStack.length - 1].indent > indentLevel) {
-        result += `</${listStack.pop()!.type}>`
+        result += '</' + listStack.pop()!.type + '>'
       }
       
       // If we have a list at the same level but different type, close it
       if (listStack.length > 0 && 
           listStack[listStack.length - 1].indent === indentLevel && 
           listStack[listStack.length - 1].type !== newType) {
-        result += `</${listStack.pop()!.type}>`
+        result += '</' + listStack.pop()!.type + '>'
       }
       
       // Open new list if needed
       if (listStack.length === 0 || listStack[listStack.length - 1].indent < indentLevel) {
-        result += `<${newType}>`
+        result += '<' + newType + '>'
         listStack.push({type: newType, indent: indentLevel})
       } else if (listStack.length === 0 || listStack[listStack.length - 1].indent !== indentLevel) {
-        result += `<${newType}>`
+        result += '<' + newType + '>'
         listStack.push({type: newType, indent: indentLevel})
       }
       
-      result += `<li>${formatInlineMarkdown(content)}</li>`
+      result += '<li>' + formatInlineMarkdown(content) + '</li>'
     } else {
       // Not a list item - close all open lists
       while (listStack.length > 0) {
-        result += `</${listStack.pop()!.type}>`
+        result += '</' + listStack.pop()!.type + '>'
       }
       
       // Handle regular text
@@ -367,7 +413,7 @@ function formatInlineText(content: string): string {
   
   // Close any remaining open lists
   while (listStack.length > 0) {
-    result += `</${listStack.pop()!.type}>`
+    result += '</' + listStack.pop()!.type + '>'
   }
   
   return result
@@ -448,6 +494,97 @@ async function handleRegenerateResponse(messageId: string) {
     }
   }
 }
+
+// Widget handling functions
+function handleWidgetChange(event: WidgetEvent) {
+  console.log('Widget changed:', event)
+  widgetStore.handleWidgetEvent(event)
+}
+
+function handleWidgetAction(event: WidgetEvent) {
+  console.log('Widget action:', event)
+  widgetStore.handleWidgetEvent(event)
+}
+
+async function submitWidgetForm(messageId: string) {
+  if (!widgetStore.isFormValid) {
+    console.warn('Form is not valid')
+    return
+  }
+  
+  // Get form data and send as a message
+  const formData = widgetStore.formData
+  const formMessage = `Form submitted: ${JSON.stringify(formData, null, 2)}`
+  
+  // Clear widgets after submission
+  widgetStore.clearWidgets()
+  
+  // Send the form data as a new message
+  await sendMessage(formMessage)
+}
+
+function cancelWidgetForm(messageId: string) {
+  widgetStore.clearWidgets()
+  console.log('Widget form cancelled')
+}
+
+// Demo function to show widgets (for testing)
+function showDemoWidgets() {
+  const sampleWidgets = generateSampleWidgets()
+  
+  // Add a message with widgets
+  const demoMessage = {
+    id: Date.now().toString(),
+    sender: 'ai' as const,
+    content: '',
+    text: 'Let\'s configure your new application. Please answer the following questions:',
+    widgets: sampleWidgets,
+    widgetResponse: {
+      widgets: sampleWidgets,
+      layout: 'single' as const,
+      submitButton: { label: 'Continue' }
+    },
+    timestamp: new Date()
+  }
+  
+  // Add to messages
+  const messages = chatStore.messages.get(currentSessionId.value || '')
+  if (messages) {
+    messages.push(demoMessage)
+  }
+  
+  // Load widgets into store
+  widgetStore.loadWidgetResponse(demoMessage.widgetResponse)
+}
+
+// Intercept AI responses to parse widgets
+chatStore.$onAction(({ name, after }) => {
+  if (name === 'addMessage') {
+    after((result) => {
+      const messages = chatStore.messages.get(currentSessionId.value || '')
+      if (messages && messages.length > 0) {
+        const lastMessage = messages[messages.length - 1]
+        if (lastMessage.sender === 'ai') {
+          // Parse AI response for widgets
+          const parsed = parseAIResponse(lastMessage.content)
+          if (parsed.widgets || parsed.widgetResponse) {
+            // Update message with parsed widgets
+            lastMessage.text = parsed.text
+            lastMessage.widgets = parsed.widgets
+            lastMessage.widgetResponse = parsed.widgetResponse
+            
+            // Load widgets into store
+            if (parsed.widgetResponse) {
+              widgetStore.loadWidgetResponse(parsed.widgetResponse)
+            } else if (parsed.widgets) {
+              widgetStore.addWidgets(parsed.widgets)
+            }
+          }
+        }
+      }
+    })
+  }
+})
 </script>
 
 <style scoped lang="scss">
@@ -637,6 +774,13 @@ async function handleRegenerateResponse(messageId: string) {
     color: var(--text-secondary);
     margin-bottom: 2rem;
   }
+  
+  .tagline {
+    font-size: 1.25rem;
+    color: var(--accent);
+    font-weight: 500;
+    margin-bottom: 2rem;
+  }
 }
 
 .suggestions {
@@ -697,6 +841,69 @@ async function handleRegenerateResponse(messageId: string) {
   padding: 0.75rem 1rem;
   border-radius: var(--radius-lg);
   position: relative;
+}
+
+.message-text {
+  line-height: 1.5;
+}
+
+.message-with-widgets {
+  width: 100%;
+  
+  .message-text {
+    margin-bottom: 1rem;
+  }
+  
+  .message-widgets {
+    margin: 1rem 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+  
+  .widget-actions {
+    display: flex;
+    gap: 0.75rem;
+    margin-top: 1.5rem;
+    
+    .btn-submit,
+    .btn-cancel {
+      padding: 0.625rem 1.25rem;
+      border-radius: var(--radius);
+      font-weight: 500;
+      transition: all var(--transition-fast);
+      cursor: pointer;
+      border: none;
+      font-size: 0.875rem;
+    }
+    
+    .btn-submit {
+      background: var(--accent);
+      color: var(--bg-primary);
+      
+      &:hover:not(:disabled) {
+        background: var(--accent-bright);
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(0, 255, 136, 0.3);
+      }
+      
+      &:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+    }
+    
+    .btn-cancel {
+      background: transparent;
+      color: var(--text-secondary);
+      border: 1px solid var(--border);
+      
+      &:hover {
+        background: rgba(255, 255, 255, 0.05);
+        border-color: var(--text-secondary);
+      }
+    }
+  }
 }
 
 .message-text {
@@ -867,10 +1074,10 @@ async function handleRegenerateResponse(messageId: string) {
   }
 }
 
+.floating-demo-btn,
 .floating-settings-btn {
   position: fixed;
   bottom: 2rem;
-  left: 2rem;
   width: 56px;
   height: 56px;
   border-radius: 50%;
@@ -884,6 +1091,21 @@ async function handleRegenerateResponse(messageId: string) {
   justify-content: center;
   transition: all var(--transition-fast);
   z-index: 1000;
+  font-size: 1.5rem;
+}
+
+.floating-demo-btn {
+  left: 2rem;
+}
+
+.floating-settings-btn {
+  left: 5rem;
+}
+
+.floating-demo-btn:hover {
+  transform: scale(1.1);
+  background: var(--accent-secondary);
+  box-shadow: 0 6px 20px rgba(0, 255, 136, 0.5);
 }
 
 .floating-settings-btn:hover {

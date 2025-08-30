@@ -92,25 +92,81 @@ class ChatServicer(chat_pb2_grpc.ChatServiceServicer):
         try:
             logger.info(f"Starting stream for session: {request.session_id}")
             
-            # This would connect to a message queue or event stream
-            # For now, simulate streaming
-            chunks = [
-                "Processing your request...",
-                "Analyzing the information...",
-                "Generating response...",
-                "Here is your answer:"
-            ]
+            # Import streaming handler
+            from .streaming_handler import streaming_handler, StreamEventType
             
-            for i, chunk in enumerate(chunks):
-                response = chat_pb2.StreamResponse(
-                    chunk_id=f"chunk_{i}",
-                    content=chunk,
-                    is_final=(i == len(chunks) - 1),
-                    widgets=[] if i < len(chunks) - 1 else self._build_widgets([])
-                )
+            # Get message from request
+            message = request.message if hasattr(request, 'message') else "Hello, how can I help you?"
+            
+            # Get metadata from context
+            metadata_dict = {}
+            for key, value in context.invocation_metadata():
+                metadata_dict[key] = value
+            
+            # Initialize streaming handler with model if not already done
+            if not streaming_handler.model and self.agent_manager.model:
+                streaming_handler.model = self.agent_manager.model
+            
+            # Generate message ID
+            message_id = f"msg_{datetime.utcnow().timestamp()}"
+            
+            # Stream the response
+            chunk_index = 0
+            accumulated_text = ""
+            
+            async for event in streaming_handler.stream_gemini_response(
+                prompt=message,
+                session_id=request.session_id,
+                message_id=message_id,
+                temperature=request.options.temperature if hasattr(request, 'options') and hasattr(request.options, 'temperature') else 0.7,
+                max_tokens=request.options.max_tokens if hasattr(request, 'options') and hasattr(request.options, 'max_tokens') else 4096
+            ):
                 
-                yield response
-                await asyncio.sleep(0.5)  # Simulate processing time
+                if event.type == StreamEventType.START:
+                    # Send initial response with metadata
+                    response = chat_pb2.StreamResponse(
+                        chunk_id=f"chunk_{chunk_index}",
+                        content="",
+                        is_final=False,
+                        metadata=self._build_stream_metadata(event.metadata)
+                    )
+                    yield response
+                    chunk_index += 1
+                    
+                elif event.type == StreamEventType.CHUNK:
+                    # Send content chunk
+                    accumulated_text += event.chunk
+                    response = chat_pb2.StreamResponse(
+                        chunk_id=f"chunk_{chunk_index}",
+                        content=event.chunk,
+                        is_final=False,
+                        widgets=[]
+                    )
+                    yield response
+                    chunk_index += 1
+                    
+                elif event.type == StreamEventType.END:
+                    # Parse final response for widgets
+                    from ..utils.response_parser import ResponseParser
+                    parser = ResponseParser()
+                    parsed = parser.parse_response(accumulated_text, {})
+                    
+                    # Send final response with widgets
+                    response = chat_pb2.StreamResponse(
+                        chunk_id=f"chunk_{chunk_index}",
+                        content="",
+                        is_final=True,
+                        widgets=self._build_widgets(parsed.get("widgets", [])),
+                        metadata=self._build_stream_metadata(event.metadata)
+                    )
+                    yield response
+                    
+                elif event.type == StreamEventType.ERROR:
+                    # Handle streaming error
+                    logger.error(f"Stream error: {event.error}")
+                    context.set_code(grpc.StatusCode.INTERNAL)
+                    context.set_details(event.error)
+                    break
                 
         except Exception as e:
             logger.error(f"Error in stream: {e}")
@@ -249,6 +305,12 @@ class ChatServicer(chat_pb2_grpc.ChatServiceServicer):
             pass
         
         return proto_messages
+    
+    def _build_stream_metadata(self, metadata: dict) -> Any:
+        """Build streaming metadata"""
+        # Would create proper proto metadata object
+        # For now, return None
+        return None
 
 
 class HealthServicer:
@@ -293,10 +355,20 @@ class GrpcServer:
             chat_servicer = ChatServicer(self.agent_manager)
             health_servicer = HealthServicer()
             
+            # Add workflow servicer
+            from .workflow_service import WorkflowService
+            workflow_servicer = WorkflowService(self.agent_manager)
+            
             # Register services (would use generated registration methods)
             try:
                 chat_pb2_grpc.add_ChatServiceServicer_to_server(
                     chat_servicer, self.server
+                )
+                
+                # Register workflow service
+                from ..proto import workflow_pb2_grpc
+                workflow_pb2_grpc.add_WorkflowServiceServicer_to_server(
+                    workflow_servicer, self.server
                 )
             except:
                 logger.warning("Proto files not generated yet, skipping registration")
