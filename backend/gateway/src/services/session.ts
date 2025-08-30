@@ -1,7 +1,7 @@
 import { Pool } from 'pg'
 // import { v4 as uuidv4 } from 'uuid'
 const uuidv4 = () => `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`
-import { getSession, setSession, deleteSession } from './redis.js'
+import { getSession, setSession, deleteSession } from './redis'
 import { logger } from '../utils/logger.js'
 
 export interface Session {

@@ -3,24 +3,28 @@ import cors from '@fastify/cors'
 import helmet from '@fastify/helmet'
 import jwt from '@fastify/jwt'
 import rateLimit from '@fastify/rate-limit'
-import { env } from './utils/envValidator.js'  // Validate environment on startup
-import { config } from './config/index.js'
-import { logger } from './utils/logger.js'
-import { healthRoutes } from './routes/health.js'
-import { authRoutes } from './routes/auth.js'
-import { chatRoutes } from './routes/chat.js'
-import { streamRoutes } from './routes/stream.js'
-import { apiKeyRoutes } from './routes/apiKeys.js'
-import { securityRoutes } from './routes/security.js'
-import { errorHandler } from './middleware/errorHandler.js'
-import { initializeDatabase, pool } from './db/index.js'
-import { initializeRedis, getRedis } from './services/redis.js'
-import { initializeGrpcClients } from './services/grpc.js'
-import { setupWebSocket } from './services/websocket.js'
-import { securityPlugin, requestIdPlugin, corsOptions } from './middleware/security.js'
-import { initSecureDatabase } from './services/secureDatabase.js'
-import { AuditLogger } from './services/auditLogger.js'
-import { startSecurityCronJobs, stopSecurityCronJobs } from './services/cronJobs.js'
+import { env } from './utils/envValidator'  // Validate environment on startup
+import { config } from './config/index'
+import { logger } from './utils/logger'
+import { healthRoutes } from './routes/health'
+import { authRoutes } from './routes/auth'
+import { chatRoutes } from './routes/chat'
+import { streamRoutes } from './routes/stream'
+import { apiKeyRoutes } from './routes/apiKeys'
+import { securityRoutes } from './routes/security'
+import settingsRoutes from './routes/settings'
+import apiRoutes from './routes/api'
+import workflowRoutes from './routes/workflow'
+import { errorHandler } from './middleware/errorHandler'
+import { initializeDatabase, pool } from './db/index'
+import { initializeRedis, getRedis } from './services/redis'
+import { initializeGrpcClients } from './services/grpc'
+import { setupWebSocket } from './services/websocket'
+import { securityPlugin, requestIdPlugin, corsOptions } from './middleware/security'
+import { correlationIdMiddleware } from './middleware/correlationId'
+import { initSecureDatabase } from './services/secureDatabase'
+import { AuditLogger } from './services/auditLogger'
+import { startSecurityCronJobs, stopSecurityCronJobs } from './services/cronJobs'
 
 const server = Fastify({
   logger: true
@@ -50,6 +54,9 @@ async function start() {
     // Register security plugins
     await server.register(requestIdPlugin)
     await server.register(securityPlugin)
+    
+    // Add correlation ID middleware
+    server.addHook('onRequest', correlationIdMiddleware)
     
     // Register CORS with enhanced security options
     await server.register(cors, corsOptions)
@@ -106,6 +113,9 @@ async function start() {
     await server.register(streamRoutes, { prefix: '/api/v1/stream' })
     await server.register(apiKeyRoutes, { prefix: '/api/v1' })
     await server.register(securityRoutes, { prefix: '/api/v1/security' })
+    await server.register(settingsRoutes, { prefix: '/api/v1' })
+    await server.register(apiRoutes, { prefix: '/api/v1/external' })  // External API routes
+    await server.register(workflowRoutes, { prefix: '/api/v1' })  // Workflow routes
 
     // Start server
     await server.listen({ 

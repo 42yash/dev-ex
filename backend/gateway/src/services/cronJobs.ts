@@ -1,10 +1,10 @@
 import cron from 'node-cron'
-import { TokenService } from './tokenService.js'
-import { ApiKeyService } from './apiKeyService.js'
-import { AuditLogger } from './auditLogger.js'
+import { TokenService } from './tokenService'
+import { ApiKeyService } from './apiKeyService'
+import { AuditLogger } from './auditLogger'
 import { logger } from '../utils/logger.js'
 import { query } from '../db/index.js'
-import { getCached, setCached } from './redis.js'
+import { getCached, setCached } from './redis'
 
 interface CronJob {
   name: string
