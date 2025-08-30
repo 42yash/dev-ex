@@ -10,19 +10,19 @@ Dev-Ex is a dual-purpose system that combines an AI-driven autonomous developmen
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                     Orchestration Layer                       │
-│                         (n8n Engine)                          │
+│                  Workflow Orchestration Layer                 │
+│                    (Custom Workflow Engine)                   │
 ├─────────────────────────────────────────────────────────────┤
-│                      Agent Pipeline                           │
+│                      Agent Ecosystem                          │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐   │
-│  │Architect │→ │   Idea   │→ │Technical │→ │Scaffold  │   │
-│  │  Agent   │  │Generator │  │   Doc    │  │  Agent   │   │
+│  │  Agent   │  │  Agent   │  │   Idea   │  │Technical │   │
+│  │Pool Maker│→ │  Darwin  │→ │Generator │→ │  Writer  │   │
 │  └──────────┘  └──────────┘  └──────────┘  └──────────┘   │
 ├─────────────────────────────────────────────────────────────┤
 │                    Support Infrastructure                     │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐   │
-│  │ Message  │  │  State   │  │  Vector  │  │Approval  │   │
-│  │  Queue   │  │  Store   │  │Database  │  │ Webhook  │   │
+│  │  gRPC    │  │  Redis   │  │  Vector  │  │Workflow  │   │
+│  │ Services │  │  Cache   │  │Database  │  │  State   │   │
 │  └──────────┘  └──────────┘  └──────────┘  └──────────┘   │
 └─────────────────────────────────────────────────────────────┘
 ```

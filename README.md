@@ -9,14 +9,16 @@ Dev-Ex is a dual-purpose system that combines an AI-driven autonomous developmen
 ### The Platform Components
 
 1. **The Autonomous Development Platform ("The Factory")**
-   - AI-agent orchestration system powered by n8n
-   - Automates the software development lifecycle from ideation to scaffolding
-   - Self-improving capability through meta-agent architecture
+   - AI-agent orchestration system with workflow management
+   - Automates the software development lifecycle from ideation to deployment
+   - Self-improving capability through Agent Darwin's evolutionary system
+   - Dynamic agent creation with Agent Pool Maker
 
 2. **The Documentation Q&A Application ("The Product")**
    - Modular, conversational AI guide for technical documentation
-   - Serves as both the first product and proof-of-concept
+   - Interactive widget system for dynamic user interfaces
    - Extensible connector architecture for multiple documentation sources
+   - Real-time workflow visualization and management
 
 ## 🏗️ Architecture
 
@@ -92,23 +94,36 @@ The platform implements a microservices architecture with clear separation of co
 
 ## 🤖 Core Agents
 
-### The Agent Pipeline
+### Management Agents
 
-1. **Agent 0: The Architect Agent** 🏛️
-   - Meta-agent that generates system prompts for other agents
-   - Ensures consistency and security across the agent ecosystem
+1. **Agent Pool Maker (Agent 0)** 🏛️
+   - Master orchestrator that creates and manages specialized agents
+   - Analyzes project requirements to determine needed agents
+   - Dynamically configures agent tools and permissions
+   - Manages agent lifecycle and task distribution
 
-2. **Agent 1: Idea Generation Agent** 💡
+2. **Agent Darwin** 🧬
+   - Evolution and optimization system for agent performance
+   - Monitors agent metrics and success rates
+   - Updates agent prompts based on performance data
+   - Implements continuous improvement through evolutionary strategies
+
+### Workflow Agents
+
+3. **Idea Generator Agent** 💡
    - Transforms vague concepts into structured project ideas
    - Provides multiple variations and refinement questions
+   - Asks clarifying questions to refine concepts
 
-3. **Agent 2: Technical Documentation Agent** ✍️
-   - Converts ideas into comprehensive technical specifications
-   - Interactive, multi-stage documentation process
+4. **Technical Writer Agent** ✍️
+   - Creates comprehensive technical specifications
+   - Generates API documentation and user guides
+   - Produces SRE documents and architecture diagrams
 
-4. **Agent 3: Code Scaffolding Agent** 🏗️
-   - Generates complete project scaffolds
-   - Manages sub-agents for different technical aspects
+5. **Architect Agent** 🏗️
+   - Designs system architecture and selects design patterns
+   - Creates infrastructure diagrams and data models
+   - Defines service boundaries and technology stack
 
 ## 🔧 Technology Stack
 
@@ -126,9 +141,10 @@ The platform implements a microservices architecture with clear separation of co
 
 ### AI Services
 - **Language**: Python 3.11
-- **AI Model**: Google Gemini Pro
+- **AI Models**: Google Gemini Pro, Gemini 2.5 Flash
 - **Vector Database**: PostgreSQL with pgvector
-- **Framework**: Custom agent architecture
+- **Framework**: Custom agent architecture with gRPC
+- **Workflow Engine**: Custom workflow orchestrator
 
 ### Infrastructure
 - **Container**: Docker
