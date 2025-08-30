@@ -1,6 +1,6 @@
 import { query } from '../db/index.js'
 import { logger } from '../utils/logger.js'
-import { getCached, setCached } from './redis.js'
+import { getCached, setCached } from './redis'
 import crypto from 'crypto'
 
 export interface AuditEvent {

@@ -1,6 +1,27 @@
 import { FastifyError, FastifyReply, FastifyRequest, FastifyInstance } from 'fastify'
 import { ZodError } from 'zod'
 import { logger } from '../utils/logger.js'
+import {
+  BaseError,
+  ValidationError,
+  AuthenticationError,
+  NotFoundError,
+  ConflictError,
+  RateLimitError,
+  ErrorFactory,
+  formatErrorResponse,
+  isBaseError,
+  isRateLimitError
+} from '../utils/errors.js'
+
+// Re-export for backward compatibility
+export {
+  ValidationError,
+  AuthenticationError,
+  NotFoundError,
+  ConflictError,
+  RateLimitError
+} from '../utils/errors.js'
 
 export interface AppError extends Error {
   statusCode?: number
@@ -8,67 +29,55 @@ export interface AppError extends Error {
   details?: any
 }
 
-export class ValidationError extends Error implements AppError {
-  statusCode = 400
-  code = 'VALIDATION_ERROR'
-  
-  constructor(message: string, public details?: any) {
-    super(message)
-    this.name = 'ValidationError'
-  }
-}
-
-export class AuthenticationError extends Error implements AppError {
-  statusCode = 401
-  code = 'AUTHENTICATION_ERROR'
-  
-  constructor(message: string = 'Authentication required') {
-    super(message)
-    this.name = 'AuthenticationError'
-  }
-}
-
-export class NotFoundError extends Error implements AppError {
-  statusCode = 404
-  code = 'NOT_FOUND'
-  
-  constructor(resource: string) {
-    super(`${resource} not found`)
-    this.name = 'NotFoundError'
-  }
-}
-
-export class ConflictError extends Error implements AppError {
-  statusCode = 409
-  code = 'CONFLICT'
-  
-  constructor(message: string) {
-    super(message)
-    this.name = 'ConflictError'
-  }
-}
-
-export class RateLimitError extends Error implements AppError {
-  statusCode = 429
-  code = 'RATE_LIMIT_EXCEEDED'
-  
-  constructor(public retryAfter: number = 60) {
-    super('Rate limit exceeded')
-    this.name = 'RateLimitError'
-  }
-}
-
 export async function errorHandler(
-  error: FastifyError | AppError | ZodError,
+  error: FastifyError | AppError | ZodError | BaseError,
   request: FastifyRequest,
   reply: FastifyReply
 ): Promise<void> {
   const requestId = request.id || `req_${Date.now()}`
+  const correlationId = (request.headers['x-correlation-id'] as string) || 
+                       (request as any).correlationId || 
+                       `corr_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+  
+  // Convert to BaseError if needed
+  let baseError: BaseError
+  
+  if (error instanceof ZodError) {
+    const validationErrors = error.errors.map(err => ({
+      field: err.path.join('.'),
+      message: err.message
+    }))
+    baseError = new ValidationError('Validation failed', validationErrors, {
+      requestId,
+      correlationId,
+      userId: (request as any).user?.id
+    })
+  } else if (isBaseError(error)) {
+    // Add context if missing
+    if (!error.context.requestId) {
+      error.context.requestId = requestId
+    }
+    if (!error.context.correlationId) {
+      error.context.correlationId = correlationId
+    }
+    if (!error.context.userId && (request as any).user?.id) {
+      error.context.userId = (request as any).user?.id
+    }
+    baseError = error
+  } else {
+    // Convert other errors
+    baseError = ErrorFactory.fromError(error as Error, {
+      requestId,
+      correlationId,
+      userId: (request as any).user?.id
+    })
+  }
   
   // Log the error
   logger.error({
-    err: error,
+    err: baseError.toJSON(),
     requestId,
+    correlationId,
     request: {
       method: request.method,
       url: request.url,
@@ -78,114 +87,20 @@ export async function errorHandler(
     userId: (request as any).user?.id
   }, 'Request error')
 
-  // Handle Zod validation errors
-  if (error instanceof ZodError) {
-    reply.status(400).send({
-      error: 'Validation Error',
-      code: 'VALIDATION_ERROR',
-      details: error.errors.map(err => ({
-        field: err.path.join('.'),
-        message: err.message,
-        type: err.code
-      })),
-      requestId
-    })
-    return
+  // Set correlation ID header
+  reply.header('X-Correlation-ID', correlationId)
+  
+  // Handle rate limit errors
+  if (isRateLimitError(baseError)) {
+    reply.header('X-RateLimit-Retry-After', baseError.retryAfter.toString())
+    reply.header('X-RateLimit-Limit', baseError.limit.toString())
   }
-
-  // Handle custom application errors
-  if ('statusCode' in error && error.statusCode) {
-    if (error instanceof RateLimitError) {
-      reply.header('X-RateLimit-Retry-After', error.retryAfter.toString())
-    }
-    
-    reply.status(error.statusCode).send({
-      error: error.message,
-      code: error.code || 'ERROR',
-      details: (error as AppError).details,
-      requestId
-    })
-    return
-  }
-
-  // Handle Fastify validation errors
-  if ((error as FastifyError).validation) {
-    reply.status(400).send({
-      error: 'Validation Error',
-      code: 'VALIDATION_ERROR',
-      message: 'Invalid request data',
-      details: (error as FastifyError).validation,
-      requestId
-    })
-    return
-  }
-
-  // Handle JWT errors
-  if (error.name === 'JsonWebTokenError') {
-    reply.status(401).send({
-      error: 'Invalid token',
-      code: 'INVALID_TOKEN',
-      requestId
-    })
-    return
-  }
-
-  if (error.name === 'TokenExpiredError') {
-    reply.status(401).send({
-      error: 'Token expired',
-      code: 'TOKEN_EXPIRED',
-      requestId
-    })
-    return
-  }
-
-  // Handle database errors
-  if (error.message?.includes('ECONNREFUSED')) {
-    reply.status(503).send({
-      error: 'Database unavailable',
-      code: 'DATABASE_ERROR',
-      requestId
-    })
-    return
-  }
-
-  // Handle gRPC errors
-  if (error.message?.includes('gRPC')) {
-    reply.status(502).send({
-      error: 'AI service unavailable',
-      code: 'AI_SERVICE_ERROR',
-      requestId
-    })
-    return
-  }
-
-  // Map Fastify status codes
-  const statusCode = (error as FastifyError).statusCode || 500
-  const statusMessages: Record<number, string> = {
-    401: 'Authentication required',
-    403: 'Insufficient permissions',
-    404: 'Resource not found',
-    429: 'Rate limit exceeded'
-  }
-
-  if (statusCode !== 500 && statusMessages[statusCode]) {
-    reply.status(statusCode).send({
-      error: statusMessages[statusCode],
-      code: error.code || 'ERROR',
-      requestId
-    })
-    return
-  }
-
-  // Default to 500 Internal Server Error
-  const isDevelopment = process.env.NODE_ENV === 'development'
-  reply.status(500).send({
-    error: 'Internal Server Error',
-    code: 'INTERNAL_ERROR',
-    message: isDevelopment ? error.message : 'An unexpected error occurred',
-    requestId,
-    ...(isDevelopment && { stack: error.stack })
-  })
+  
+  // Send error response
+  const includeStack = process.env.NODE_ENV === 'development'
+  const response = formatErrorResponse(baseError, includeStack)
+  
+  reply.status(baseError.statusCode).send(response)
 }
 
 export function setupErrorHandler(fastify: FastifyInstance) {

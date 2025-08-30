@@ -1,6 +1,6 @@
 import crypto from 'crypto'
 import { query } from '../db/index.js'
-import { getCached, setCached, deleteCached } from './redis.js'
+import { getCached, setCached, deleteCached } from './redis'
 import { logger } from '../utils/logger.js'
 
 interface ApiKey {

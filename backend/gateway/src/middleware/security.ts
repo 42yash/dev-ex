@@ -1,5 +1,7 @@
 import { FastifyPluginAsync, FastifyRequest, FastifyReply } from 'fastify'
 import crypto from 'crypto'
+import { ApiKeyService } from '../services/apiKeyService.js'
+import { AuditLogger } from '../services/auditLogger.js'
 
 // Security headers configuration
 export const securityHeaders = {
@@ -99,27 +101,114 @@ export const securityPlugin: FastifyPluginAsync = async (fastify) => {
 // API Key validation middleware
 export const validateApiKey = async (request: FastifyRequest, reply: FastifyReply) => {
   const apiKey = request.headers['x-api-key'] as string
+  const requestId = (request as any).requestId || crypto.randomUUID()
   
   if (!apiKey) {
+    // Log failed attempt
+    await AuditLogger.logAuthEvent(
+      'api_key_auth_failed',
+      null,
+      request.ip,
+      {
+        reason: 'missing_api_key',
+        endpoint: request.url,
+        method: request.method
+      },
+      'failure',
+      requestId
+    )
+    
     return reply.status(401).send({
       error: 'Unauthorized',
       message: 'API key is required'
     })
   }
   
-  // Validate API key format (should be a UUID or specific format)
-  const apiKeyRegex = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i
-  if (!apiKeyRegex.test(apiKey)) {
-    return reply.status(401).send({
-      error: 'Unauthorized',
-      message: 'Invalid API key format'
+  try {
+    // Validate API key against database
+    const validation = await ApiKeyService.validateApiKey(apiKey)
+    
+    if (!validation.valid) {
+      // Log failed authentication
+      await AuditLogger.logAuthEvent(
+        'api_key_auth_failed',
+        null,
+        request.ip,
+        {
+          reason: 'invalid_api_key',
+          endpoint: request.url,
+          method: request.method
+        },
+        'failure',
+        requestId
+      )
+      
+      return reply.status(401).send({
+        error: 'Unauthorized',
+        message: 'Invalid or expired API key'
+      })
+    }
+    
+    // Check permissions if required
+    const requiredPermission = (request as any).requiredPermission
+    if (requiredPermission && validation.permissions) {
+      const hasPermission = validation.permissions.includes(requiredPermission) || 
+                           validation.permissions.includes('admin')
+      
+      if (!hasPermission) {
+        // Log permission denied
+        await AuditLogger.logAuthEvent(
+          'api_key_permission_denied',
+          validation.userId || null,
+          request.ip,
+          {
+            required: requiredPermission,
+            available: validation.permissions,
+            endpoint: request.url,
+            method: request.method
+          },
+          'failure',
+          requestId
+        )
+        
+        return reply.status(403).send({
+          error: 'Forbidden',
+          message: 'Insufficient permissions for this operation'
+        })
+      }
+    }
+    
+    // Attach user context to request
+    (request as any).apiKeyAuth = {
+      userId: validation.userId,
+      permissions: validation.permissions,
+      rateLimit: validation.rateLimit
+    }
+    
+    // Log successful authentication
+    await AuditLogger.logAuthEvent(
+      'api_key_auth_success',
+      validation.userId || null,
+      request.ip,
+      {
+        endpoint: request.url,
+        method: request.method,
+        permissions: validation.permissions
+      },
+      'success',
+      requestId
+    )
+    
+    return true
+  } catch (error) {
+    // Log error
+    request.log.error({ error, apiKey: apiKey.substring(0, 10) + '...' }, 'API key validation error')
+    
+    return reply.status(500).send({
+      error: 'Internal Server Error',
+      message: 'Failed to validate API key'
     })
   }
-  
-  // TODO: Check API key against database
-  // This would involve checking the key exists, is not expired, and has necessary permissions
-  
-  return true
 }
 
 // Request ID middleware for tracing
