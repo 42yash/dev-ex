@@ -6,85 +6,16 @@ Creates and manages specialized agents based on project requirements
 import json
 import logging
 from typing import Dict, List, Optional, Any, Set
-from dataclasses import dataclass, field
-from enum import Enum
 import asyncio
 from datetime import datetime
 import uuid
 
-from .base import BaseAgent, AgentContext, AgentStatus, AgentType
+from .base import BaseAgent, AgentContext, AgentStatus, AgentType, AgentResult
 from .execution_limiter import ExecutionLimiter
+from .specifications import AgentSpecification, ProjectRequirements, TechnologyStack
 from ..config import Config
 
 logger = logging.getLogger(__name__)
-
-
-class TechnologyStack(Enum):
-    """Supported technology stacks"""
-    PYTHON_FASTAPI = "python_fastapi"
-    PYTHON_DJANGO = "python_django"
-    PYTHON_FLASK = "python_flask"
-    NODEJS_EXPRESS = "nodejs_express"
-    NODEJS_NESTJS = "nodejs_nestjs"
-    VUE_TYPESCRIPT = "vue_typescript"
-    REACT_TYPESCRIPT = "react_typescript"
-    ANGULAR = "angular"
-    GOLANG = "golang"
-    RUST = "rust"
-    DATABASE_POSTGRES = "database_postgres"
-    DATABASE_MONGODB = "database_mongodb"
-    DATABASE_REDIS = "database_redis"
-    DOCKER = "docker"
-    KUBERNETES = "kubernetes"
-    AWS = "aws"
-    GCP = "gcp"
-    AZURE = "azure"
-
-
-@dataclass
-class AgentSpecification:
-    """Specification for creating an agent"""
-    agent_id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    name: str = ""
-    type: AgentType = AgentType.CODE
-    technologies: List[TechnologyStack] = field(default_factory=list)
-    responsibilities: List[str] = field(default_factory=list)
-    dependencies: List[str] = field(default_factory=list)  # IDs of other agents
-    tools: List[str] = field(default_factory=list)
-    context_requirements: Dict[str, Any] = field(default_factory=dict)
-    performance_metrics: Dict[str, float] = field(default_factory=dict)
-    created_at: datetime = field(default_factory=datetime.now)
-    
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "agent_id": self.agent_id,
-            "name": self.name,
-            "type": self.type.value,
-            "technologies": [t.value for t in self.technologies],
-            "responsibilities": self.responsibilities,
-            "dependencies": self.dependencies,
-            "tools": self.tools,
-            "context_requirements": self.context_requirements,
-            "performance_metrics": self.performance_metrics,
-            "created_at": self.created_at.isoformat()
-        }
-
-
-@dataclass
-class ProjectRequirements:
-    """Analyzed project requirements"""
-    project_type: str = ""  # web_app, api, cli, mobile, etc.
-    technologies: Set[TechnologyStack] = field(default_factory=set)
-    features: List[str] = field(default_factory=list)
-    complexity: str = "medium"  # simple, medium, complex
-    timeline: str = "standard"  # urgent, standard, relaxed
-    team_size: int = 1
-    has_authentication: bool = False
-    has_database: bool = False
-    has_realtime: bool = False
-    has_deployment: bool = False
-    has_testing: bool = True
-    has_documentation: bool = True
 
 
 class AgentPoolMaker(BaseAgent):
@@ -92,7 +23,7 @@ class AgentPoolMaker(BaseAgent):
     Agent 0 - Master orchestrator that creates and manages other agents
     """
     
-    def __init__(self, config: Config, execution_limiter: Optional[ExecutionLimiter] = None):
+    def __init__(self, config: Config, execution_limiter: Optional[ExecutionLimiter] = None, model: Optional[Any] = None):
         super().__init__(
             name="agent_pool_maker",
             agent_type=AgentType.META,
@@ -106,8 +37,14 @@ class AgentPoolMaker(BaseAgent):
         self.agent_id = "agent-0"  # Store separately
         self.config = config
         self.execution_limiter = execution_limiter
+        self.model = model  # Store model for agent creation
+        
+        # Import and initialize agent factory (imported here to avoid circular import)
+        from .factory import AgentFactory
+        self.agent_factory = AgentFactory(config=config, model=model)
         
         self.agent_pool: Dict[str, AgentSpecification] = {}
+        self.active_agents: Dict[str, BaseAgent] = {}  # Track instantiated agents
         self.agent_templates = self._initialize_templates()
         self.technology_mapping = self._initialize_technology_mapping()
         
@@ -544,6 +481,226 @@ class AgentPoolMaker(BaseAgent):
             logger.info(f"Removed agent {agent_id} from pool")
             return True
         return False
+    
+    async def instantiate_agents(self, specs: List[AgentSpecification]) -> List[BaseAgent]:
+        """
+        Convert agent specifications to actual agent instances
+        
+        Args:
+            specs: List of agent specifications
+            
+        Returns:
+            List of instantiated agents
+        """
+        instantiated_agents = []
+        
+        for spec in specs:
+            try:
+                # Create the agent using factory
+                agent = self.agent_factory.create_agent(spec)
+                
+                # Store in active agents
+                self.active_agents[spec.agent_id] = agent
+                
+                # Add to list
+                instantiated_agents.append(agent)
+                
+                logger.info(f"Instantiated agent: {spec.name} (ID: {spec.agent_id})")
+                
+            except Exception as e:
+                logger.error(f"Failed to instantiate agent {spec.name}: {e}")
+                # Continue with other agents even if one fails
+                continue
+        
+        return instantiated_agents
+    
+    async def execute_pool(self, execution_plan: Dict[str, Any], context: AgentContext) -> Dict[str, Any]:
+        """
+        Execute agents according to the execution plan
+        
+        Args:
+            execution_plan: Plan with phases and agent assignments
+            context: Execution context
+            
+        Returns:
+            Execution results
+        """
+        results = {
+            "phases": [],
+            "overall_success": True,
+            "completed_agents": [],
+            "failed_agents": []
+        }
+        
+        for phase in execution_plan['phases']:
+            phase_results = {
+                "phase": phase['phase'],
+                "name": phase['name'],
+                "agents": [],
+                "success": True
+            }
+            
+            if phase['parallel']:
+                # Execute agents in parallel
+                agent_results = await self._execute_parallel(phase['agents'], context)
+            else:
+                # Execute agents sequentially
+                agent_results = await self._execute_sequential(phase['agents'], context)
+            
+            # Process results
+            for agent_id, result in agent_results.items():
+                if result.success:
+                    results["completed_agents"].append(agent_id)
+                else:
+                    results["failed_agents"].append(agent_id)
+                    phase_results["success"] = False
+                    results["overall_success"] = False
+                
+                phase_results["agents"].append({
+                    "agent_id": agent_id,
+                    "success": result.success,
+                    "output": result.output,
+                    "error": result.error
+                })
+            
+            results["phases"].append(phase_results)
+            
+            # Stop if phase failed and we can't continue
+            if not phase_results["success"] and not execution_plan.get('continue_on_failure', False):
+                logger.warning(f"Phase {phase['name']} failed, stopping execution")
+                break
+        
+        return results
+    
+    async def _execute_parallel(self, agent_ids: List[str], context: AgentContext) -> Dict[str, AgentResult]:
+        """
+        Execute multiple agents in parallel
+        
+        Args:
+            agent_ids: List of agent IDs to execute
+            context: Execution context
+            
+        Returns:
+            Dictionary of agent results
+        """
+        tasks = []
+        for agent_id in agent_ids:
+            agent = self.active_agents.get(agent_id)
+            if agent:
+                # Create task for agent execution
+                task = asyncio.create_task(
+                    self._execute_single_agent(agent, context)
+                )
+                tasks.append((agent_id, task))
+            else:
+                logger.warning(f"Agent {agent_id} not found in active agents")
+        
+        # Wait for all tasks to complete
+        results = {}
+        for agent_id, task in tasks:
+            try:
+                result = await task
+                results[agent_id] = result
+            except Exception as e:
+                logger.error(f"Agent {agent_id} execution failed: {e}")
+                results[agent_id] = AgentResult(
+                    success=False,
+                    output=None,
+                    error=str(e)
+                )
+        
+        return results
+    
+    async def _execute_sequential(self, agent_ids: List[str], context: AgentContext) -> Dict[str, AgentResult]:
+        """
+        Execute multiple agents sequentially
+        
+        Args:
+            agent_ids: List of agent IDs to execute
+            context: Execution context
+            
+        Returns:
+            Dictionary of agent results
+        """
+        results = {}
+        
+        for agent_id in agent_ids:
+            agent = self.active_agents.get(agent_id)
+            if agent:
+                try:
+                    result = await self._execute_single_agent(agent, context)
+                    results[agent_id] = result
+                    
+                    # Pass output to next agent via context
+                    if result.success and result.output:
+                        context.variables[f"{agent_id}_output"] = result.output
+                        
+                except Exception as e:
+                    logger.error(f"Agent {agent_id} execution failed: {e}")
+                    results[agent_id] = AgentResult(
+                        success=False,
+                        output=None,
+                        error=str(e)
+                    )
+            else:
+                logger.warning(f"Agent {agent_id} not found in active agents")
+                results[agent_id] = AgentResult(
+                    success=False,
+                    output=None,
+                    error="Agent not found"
+                )
+        
+        return results
+    
+    async def _execute_single_agent(self, agent: BaseAgent, context: AgentContext) -> AgentResult:
+        """
+        Execute a single agent with proper error handling
+        
+        Args:
+            agent: The agent to execute
+            context: Execution context
+            
+        Returns:
+            Agent result
+        """
+        try:
+            # Use execution limiter if available
+            if self.execution_limiter:
+                execution_id = f"{agent.name}_{uuid.uuid4().hex[:8]}"
+                result = await self.execution_limiter.execute_with_limits(
+                    execution_id,
+                    agent.execute,
+                    context.variables.get('input', ''),
+                    context
+                )
+            else:
+                # Direct execution
+                result = await agent.execute(
+                    context.variables.get('input', ''),
+                    context
+                )
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error executing agent {agent.name}: {e}")
+            return AgentResult(
+                success=False,
+                output=None,
+                error=str(e)
+            )
+    
+    def cleanup_pool(self):
+        """Clean up all active agents and free resources"""
+        logger.info(f"Cleaning up agent pool with {len(self.active_agents)} active agents")
+        
+        # Clear active agents
+        self.active_agents.clear()
+        
+        # Clear specifications
+        self.agent_pool.clear()
+        
+        logger.info("Agent pool cleaned up")
     
     def update_agent_metrics(self, agent_id: str, metrics: Dict[str, float]):
         """Update performance metrics for an agent"""

@@ -35,6 +35,8 @@ class AgentType(Enum):
     CODE = "code"  # Code generation
     ANALYSIS = "analysis"  # Code/doc analysis
     WORKFLOW = "workflow"  # Workflow orchestration
+    DEPLOYMENT = "deployment"  # Deployment and DevOps
+    TESTING = "testing"  # Testing and QA
 
 
 @dataclass
