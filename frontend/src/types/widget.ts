@@ -149,6 +149,9 @@ export interface FileUploadWidget extends BaseWidget {
   maxSize?: number;
   maxFiles?: number;
   files?: File[];
+  autoUpload?: boolean;
+  showUploadButton?: boolean;
+  clearAfterUpload?: boolean;
 }
 
 export interface DatePickerWidget extends BaseWidget {
