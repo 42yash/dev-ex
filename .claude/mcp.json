@@ -1,0 +1,177 @@
+{
+  "mcpServers": {
+    "codecraft-git": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-git"],
+      "description": "Git operations for parallel quest execution and version control",
+      "config": {
+        "autoCommit": false,
+        "branchPrefix": "quest/",
+        "signCommits": false
+      }
+    },
+    
+    "codecraft-filesystem": {
+      "type": "stdio", 
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem"],
+      "env": {
+        "PROJECT_ROOT": "${workspaceFolder}",
+        "ALLOWED_PATHS": "${workspaceFolder}"
+      },
+      "description": "File system access for code generation and project management"
+    },
+    
+    "codecraft-postgres": {
+      "type": "stdio",
+      "command": "npx", 
+      "args": ["-y", "@modelcontextprotocol/server-postgres"],
+      "env": {
+        "DATABASE_URL": "postgresql://devex:devex@localhost:5432/codecraft"
+      },
+      "description": "Game state persistence and progress tracking",
+      "config": {
+        "tables": [
+          "player_progress",
+          "quest_history",
+          "achievements",
+          "widget_stats",
+          "agent_relationships"
+        ]
+      }
+    },
+    
+    "codecraft-github": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_TOKEN": "${GITHUB_TOKEN}"
+      },
+      "description": "GitHub integration for collaboration and code sharing",
+      "config": {
+        "features": [
+          "issues",
+          "pull_requests",
+          "actions",
+          "discussions"
+        ]
+      }
+    },
+    
+    "codecraft-memory": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-memory"],
+      "description": "Persistent memory for game state and player progress",
+      "config": {
+        "persistence": true,
+        "maxMemory": "100MB",
+        "ttl": 86400
+      }
+    },
+    
+    "codecraft-puppeteer": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-puppeteer"],
+      "description": "Web automation for testing and documentation scraping",
+      "config": {
+        "headless": true,
+        "sandbox": true
+      }
+    },
+    
+    "codecraft-brave-search": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-brave-search"],
+      "env": {
+        "BRAVE_API_KEY": "${BRAVE_API_KEY}"
+      },
+      "description": "Search for documentation, solutions, and community content"
+    },
+    
+    "codecraft-sequential": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "mcp-sequentialthinking-server"],
+      "description": "Advanced reasoning for complex architectural decisions",
+      "config": {
+        "maxSteps": 10,
+        "timeout": 30000
+      }
+    }
+  },
+  
+  "serverGroups": {
+    "core": [
+      "codecraft-git",
+      "codecraft-filesystem",
+      "codecraft-memory"
+    ],
+    "extended": [
+      "codecraft-postgres",
+      "codecraft-github"
+    ],
+    "optional": [
+      "codecraft-puppeteer",
+      "codecraft-brave-search",
+      "codecraft-sequential"
+    ]
+  },
+  
+  "startup": {
+    "autoStart": ["core"],
+    "delayedStart": ["extended"],
+    "onDemand": ["optional"]
+  },
+  
+  "permissions": {
+    "codecraft-git": {
+      "allow": ["create_branch", "commit", "merge", "status"],
+      "deny": ["force_push", "delete_branch"]
+    },
+    "codecraft-filesystem": {
+      "allow": ["read", "write", "create"],
+      "deny": ["delete_recursive", "write_env"]
+    },
+    "codecraft-postgres": {
+      "allow": ["select", "insert", "update"],
+      "deny": ["drop", "truncate", "alter"]
+    }
+  },
+  
+  "gameIntegration": {
+    "questTracking": {
+      "server": "codecraft-postgres",
+      "table": "quest_progress"
+    },
+    "codeGeneration": {
+      "server": "codecraft-filesystem",
+      "outputDir": "./generated"
+    },
+    "versionControl": {
+      "server": "codecraft-git",
+      "autoBranch": true
+    },
+    "achievements": {
+      "server": "codecraft-memory",
+      "persist": true
+    }
+  },
+  
+  "monitoring": {
+    "logLevel": "info",
+    "metricsEnabled": true,
+    "errorReporting": true,
+    "performanceTracking": true
+  },
+  
+  "metadata": {
+    "version": "1.0.0",
+    "compatibleWith": "mcp@latest",
+    "lastUpdated": "2024-01-01"
+  }
+}

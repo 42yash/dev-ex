@@ -36,18 +36,26 @@ The platform implements a microservices architecture with clear separation of co
 
 ## 📚 Documentation
 
-### Core Documentation
-- [**Complete Technical Specification**](docs/dev-ex.md) - Comprehensive system documentation
-- [**AWS Conversational Guide**](docs/AWS_TD.md) - AWS-specific implementation details
+The documentation is organized in Obsidian-optimized folders for easy navigation and linking.
 
-### Architecture & Design
-- System Architecture Overview
-- Component Specifications
-- API Design & Protocol Buffers
-- Database Schema
+### [📖 Documentation Hub](docs/README.md)
+Your starting point for all documentation, optimized for Obsidian vault navigation.
+
+### Core Sections
+- [**🎮 CodeCraft Game System**](docs/00-codecraft/README.md) - Gamified development platform
+- [**🏭 Dev-Ex Platform**](docs/01-platform/README.md) - Autonomous development factory
+- [**⚙️ Implementation**](docs/02-implementation/README.md) - Technical implementation details
+- [**🚀 Deployment**](docs/03-deployment/README.md) - Setup and operations guides
+- [**📈 Development Progress**](docs/04-development/README.md) - Current status and roadmap
+
+### Quick Links
+- [Game Guide](docs/00-codecraft/game-guide.md) - Learn the CodeCraft system
+- [Platform Overview](docs/01-platform/platform-overview.md) - Complete technical specification
+- [Quick Start](docs/03-deployment/quickstart.md) - Get running in minutes
+- [Development Progress](docs/04-development/progress.md) - See what's new
 
 ### Implementation Guides
-- Frontend Development (Vue.js)
+- [Frontend Development](docs/02-implementation/frontend/overview.md) - Vue.js application
 - Backend Services (Node.js)
 - AI Services (Python)
 - Connector Development

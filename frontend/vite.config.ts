@@ -1,36 +1,36 @@
 import { fileURLToPath, URL } from 'node:url'
+
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
+import vueDevTools from 'vite-plugin-vue-devtools'
+import UnoCSS from 'unocss/vite'
 
-// https://vitejs.dev/config/
+// https://vite.dev/config/
 export default defineConfig({
-  plugins: [vue()],
+  plugins: [
+    vue(),
+    vueDevTools(),
+    UnoCSS(),
+  ],
   resolve: {
     alias: {
-      '@': fileURLToPath(new URL('./src', import.meta.url))
-    }
+      '@': fileURLToPath(new URL('./src', import.meta.url)),
+      '@voxel': fileURLToPath(new URL('./src/lib/voxel-ui', import.meta.url)),
+      '@game': fileURLToPath(new URL('./src/game', import.meta.url)),
+      '@widgets': fileURLToPath(new URL('./src/widgets', import.meta.url)),
+    },
   },
   server: {
-    host: '0.0.0.0',
-    port: 3000,
+    port: 5173,
     proxy: {
       '/api': {
-        target: 'http://api-gateway:8080',
+        target: 'http://localhost:3000',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, '')
-      }
-    }
+      },
+      '/socket.io': {
+        target: 'http://localhost:3000',
+        ws: true,
+      },
+    },
   },
-  build: {
-    outDir: 'dist',
-    sourcemap: true,
-    rollupOptions: {
-      output: {
-        manualChunks: {
-          'vendor': ['vue', 'pinia', 'vue-router'],
-          'grpc': ['grpc-web', '@grpc/grpc-js']
-        }
-      }
-    }
-  }
 })

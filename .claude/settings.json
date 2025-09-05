@@ -1,0 +1,183 @@
+{
+  "name": "CodeCraft Configuration",
+  "version": "1.0.0",
+  "description": "Transform Claude Code into an interactive game development system",
+  
+  "permissions": {
+    "allow": [
+      "Read(**)",
+      "Write(**/*.md)",
+      "Write(**/*.json)",
+      "Write(**/*.yaml)",
+      "Write(**/*.yml)",
+      "Edit(**)",
+      "MultiEdit(**)",
+      "Glob(**)",
+      "Grep(**)",
+      "TodoWrite(*)",
+      "Bash(git:*)",
+      "Bash(npm test:*)",
+      "Bash(npm run:*)",
+      "Bash(docker:*)",
+      "NotebookEdit(**/*.ipynb)"
+    ],
+    "deny": [
+      "Write(.env)",
+      "Read(**/*secret*)",
+      "Read(**/*password*)",
+      "Write(**/*credentials*)",
+      "Bash(rm -rf:*)",
+      "Bash(sudo:*)",
+      "Bash(kill -9:*)",
+      "KillBash(*)"
+    ],
+    "ask": [
+      "Bash",
+      "Write(**/*.ts)",
+      "Write(**/*.tsx)",
+      "Write(**/*.js)",
+      "Write(**/*.jsx)",
+      "Write(**/*.py)",
+      "Task(*)",
+      "BashOutput(*)"
+    ]
+  },
+
+  "environment": {
+    "CODECRAFT_MODE": "active",
+    "GAME_STAGE": "hybrid",
+    "BOOTSTRAP_PROGRESS": "35",
+    "XP_MULTIPLIER": "1.0",
+    "DEBUG_MODE": "false"
+  },
+
+  "features": {
+    "gamification": true,
+    "widgets": true,
+    "agents": true,
+    "quests": true,
+    "achievements": true,
+    "parallelExecution": true,
+    "bootstrapMode": true,
+    "evolutionTracking": true
+  },
+
+  "gameSettings": {
+    "playerLevel": 1,
+    "startingXP": 0,
+    "startingCoins": 100,
+    "startingGems": 5,
+    "difficultyMode": "adaptive",
+    "tutorialEnabled": true,
+    "hintsEnabled": true,
+    "autoSaveEnabled": true,
+    "autoCommitEnabled": false
+  },
+
+  "agentSettings": {
+    "maxActiveAgents": 3,
+    "agentLevelCap": 50,
+    "relationshipTracking": true,
+    "agentEvolution": true,
+    "agentSynergies": true
+  },
+
+  "widgetSettings": {
+    "defaultWidgetMode": "ascii",
+    "widgetAnimations": true,
+    "widgetSounds": false,
+    "widgetTimeout": 300,
+    "widgetHints": true,
+    "widgetScoring": true
+  },
+
+  "questSettings": {
+    "maxParallelQuests": 3,
+    "questAutoBranching": true,
+    "questDifficulty": "adaptive",
+    "sideMissionsEnabled": true,
+    "bossEncountersEnabled": true
+  },
+
+  "bootstrapSettings": {
+    "selfModificationEnabled": true,
+    "evolutionRate": 0.01,
+    "componentGeneration": true,
+    "configEvolution": true,
+    "singularityThreshold": 100
+  },
+
+  "networkSettings": {
+    "nodesEnabled": false,
+    "maxNodes": 10,
+    "nodeDiscovery": "manual",
+    "swarmMode": false
+  },
+
+  "persistenceSettings": {
+    "stateLocation": ".claude/gamestate.json",
+    "backupEnabled": true,
+    "backupFrequency": 300,
+    "cloudSyncEnabled": false
+  },
+
+  "telemetry": {
+    "collectStats": true,
+    "shareAnonymous": false,
+    "trackProgress": true,
+    "trackPatterns": true
+  },
+
+  "integrations": {
+    "git": {
+      "enabled": true,
+      "autoBranch": true,
+      "branchPrefix": "quest/",
+      "commitPrefix": "🎮 CodeCraft:",
+      "signCommits": false
+    },
+    "testing": {
+      "autoTest": true,
+      "testCommand": "npm test",
+      "coverageThreshold": 80,
+      "testRewards": true
+    },
+    "ci": {
+      "enabled": false,
+      "provider": "github-actions",
+      "autoGenerate": false
+    }
+  },
+
+  "display": {
+    "theme": "cyberpunk",
+    "colorScheme": "neon",
+    "asciiArt": true,
+    "progressBars": true,
+    "animations": true,
+    "sounds": false
+  },
+
+  "shortcuts": {
+    "quickStatus": "qs",
+    "quickWidget": "qw",
+    "quickQuest": "qq",
+    "quickSave": "qsave",
+    "quickLoad": "qload"
+  },
+
+  "experimental": {
+    "aiEvolution": true,
+    "metaConfiguration": true,
+    "quantumQuests": false,
+    "timeTravel": false,
+    "multiverse": false
+  },
+
+  "metadata": {
+    "created": "2024-01-01",
+    "lastModified": "2024-01-01",
+    "configVersion": "1.0.0",
+    "compatibleWith": "claude-code@latest"
+  }
+}
